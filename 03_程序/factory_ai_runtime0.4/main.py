@@ -781,15 +781,19 @@ def produce_one(modbus_client):
     #   改这里：config.TABLE_A_LOAD_WAIT
     time.sleep(TABLE_A_LOAD_WAIT)
 
-    # --- 1.3 停滚轮和发料器，但【皮带0 再多转一会儿】 ---
-    #  ★★★ 2026-09-28 现场反馈"皮带1 有时送料不到位" ★★★
+    # --- 1.3 只停发料器，【皮带0 + 滚轮再多转一会儿】 ---
+    #  ★★★ 2026-09-28 现场反馈"皮带1 送料不到位"（尤其第二件起）★★★
     #    原来三个一起停：发料器吐完料就不需要转了，但皮带要把料送到
     #    转盘A 门口还需要时间。一起停 -> 皮带停太早 -> 料没到门口，滚轮够不着。
-    #    现在让皮带0 比另外两个多转 BELT0_EXTRA_TIME 秒。
+    #
+    #  ★ 为什么滚轮也要跟着延长：
+    #      料"被皮带送到门口"之后，是【靠滚轮把它拉进转盘中心】的。
+    #      如果滚轮跟皮带一起停，料到了门口也没人拉它进来。
+    #      所以让"皮带 + 滚轮"一起多转，只有发料器提前停。
+    modbus_client.write_coil(EMITTER_COIL, False)          # 先停发料器
+    time.sleep(BELT0_EXTRA_TIME)                           # ★ 皮带0 + 滚轮继续转
+    modbus_client.write_coil(BELT_0_COIL, False)           # 停皮带0
     modbus_client.write_coil(TABLE_A_ROLL_P_COIL, False)   # 停滚轮
-    modbus_client.write_coil(EMITTER_COIL, False)          # 停发料
-    time.sleep(BELT0_EXTRA_TIME)                           # ★ 皮带0 继续转一段
-    modbus_client.write_coil(BELT_0_COIL, False)           # 再停皮带0
     # ★ 料刚进中心还有惯性，要停稳再转盘，否则转的时候料会偏、蹭到盘边
     time.sleep(TABLE_A_REST)
 
