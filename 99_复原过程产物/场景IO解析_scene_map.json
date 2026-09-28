@@ -1,0 +1,1518 @@
+{
+ "components": [
+  {
+   "prefab": "Turntable",
+   "key": "ba9a3393-b6e8-4904-ad28-b38a2bba7075",
+   "pos": [
+    256,
+    5,
+    132
+   ],
+   "ios": [
+    {
+     "group": "roll",
+     "tag": "BinaryOutput",
+     "name": "Turntable 0 Roll (+)",
+     "key": "a3de8642-327b-4981-af40-c657f34d7b93",
+     "addr": "34"
+    },
+    {
+     "group": "reverse",
+     "tag": "BinaryOutput",
+     "name": "Turntable 0 Roll (-)",
+     "key": "2748eaf5-11ac-437f-8ce6-db17de526573",
+     "addr": "35"
+    },
+    {
+     "group": "turn",
+     "tag": "BinaryOutput",
+     "name": "Turntable 0 Turn",
+     "key": "07b46703-1fc9-4ad3-83a1-d54d050384e7",
+     "addr": "36"
+    },
+    {
+     "group": "limitSwitch0",
+     "tag": "BinaryInput",
+     "name": "Turntable 0 (Limit 0)",
+     "key": "d21eb3fe-610a-4df4-8004-9a2285cef052",
+     "addr": "25"
+    },
+    {
+     "group": "limitSwitch90",
+     "tag": "BinaryInput",
+     "name": "Turntable 0 (Limit 90)",
+     "key": "b40cd5a4-f4e3-4f68-913f-d27cbeb94883",
+     "addr": "26"
+    },
+    {
+     "group": "frontLimit",
+     "tag": "BinaryInput",
+     "name": "Turntable 0 (Front Limit)",
+     "key": "0c925abb-7c58-4b8c-b0d2-dcd45e656a9b",
+     "addr": "27"
+    },
+    {
+     "group": "backLimit",
+     "tag": "BinaryInput",
+     "name": "Turntable 0 (Back Limit)",
+     "key": "35684108-2b22-423f-be71-1ebea59fbf89",
+     "addr": "28"
+    }
+   ]
+  },
+  {
+   "prefab": "BeltConveyor2M",
+   "key": "79d23685-bfe8-4933-a6cd-0aefb0f80945",
+   "pos": [
+    256,
+    3,
+    117
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Belt Conveyor (2m) 0",
+     "key": "22f580d2-1126-4d05-87d4-2774fecd2228",
+     "addr": "3"
+    }
+   ]
+  },
+  {
+   "prefab": "BeltConveyor2M",
+   "key": "d2d82c1a-38d1-4865-b575-6d364fe22b46",
+   "pos": [
+    271,
+    4,
+    159
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Belt Conveyor (2m) 1",
+     "key": "844a54b9-b50c-4d3b-8284-a13005a70e71",
+     "addr": "4"
+    }
+   ]
+  },
+  {
+   "prefab": "ChuteConveyorLow",
+   "key": "4d0d9de5-7492-4535-9467-e579e2e77f08",
+   "pos": [
+    279,
+    2,
+    160
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "TwoAxisPickNPlace",
+   "key": "22fe2117-fd90-418e-bb5f-4952f6cec7c3",
+   "pos": [
+    269,
+    10,
+    126
+   ],
+   "ios": [
+    {
+     "group": "Picker",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 2 (Moving Z)",
+     "key": "cce17dfe-cdb8-464b-9f84-312eebcc0f80",
+     "addr": "14"
+    },
+    {
+     "group": "Picker",
+     "tag": "AnalogueInput",
+     "name": "Two-Axis Pick &amp; Place 2 Z Position (V)",
+     "key": "dd67b815-780f-41cb-a10f-9dac53d6f9b2",
+     "addr": "0"
+    },
+    {
+     "group": "Picker",
+     "tag": "AnalogueOutput",
+     "name": "Two-Axis Pick &amp; Place 2 Z Set Point (V)",
+     "key": "78f5090e-93aa-40e5-85ca-4ab30e3c0795",
+     "addr": "0"
+    },
+    {
+     "group": "Arm",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 2 (Moving X)",
+     "key": "9e0d3f43-25a9-4b63-9fc1-4484cdc24c1f",
+     "addr": "15"
+    },
+    {
+     "group": "Arm",
+     "tag": "AnalogueInput",
+     "name": "Two-Axis Pick &amp; Place 2 X Position (V)",
+     "key": "92be32ca-9ff3-4553-aeed-a9913dd38013",
+     "addr": "1"
+    },
+    {
+     "group": "Arm",
+     "tag": "AnalogueOutput",
+     "name": "Two-Axis Pick &amp; Place 2 X Set Point (V)",
+     "key": "cc0a172e-2965-4ee4-a254-f1acad79dc5d",
+     "addr": "1"
+    },
+    {
+     "group": "Gripper",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 2 (Item Detected)",
+     "key": "76e2440a-389a-4f73-819c-8331a232213e",
+     "addr": "16"
+    },
+    {
+     "group": "Gripper",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 2 (Grab)",
+     "key": "e3b2e74b-c568-4a6c-858c-d49b5c0e35f8",
+     "addr": "110"
+    },
+    {
+     "group": "ArmRotate",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 2 (Rotating)",
+     "key": "2b08c08e-9669-4d61-8144-2335b15ec584",
+     "addr": "17"
+    },
+    {
+     "group": "ArmRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 2 Rotate CW",
+     "key": "003f69b7-eec0-450d-8706-3ff89aeeda3a",
+     "addr": "14"
+    },
+    {
+     "group": "ArmRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 2 Rotate CCW",
+     "key": "bc058fba-0617-42d4-9ce6-1c5b2101e6d0",
+     "addr": "15"
+    },
+    {
+     "group": "GripperRotate",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 2 (Gripper Rotating)",
+     "key": "b97a4014-2f1c-4384-af50-ccef90a6264c",
+     "addr": "18"
+    },
+    {
+     "group": "GripperRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 2 Gripper CW",
+     "key": "79ced75c-c9df-440f-80fc-93be235cb39c",
+     "addr": "16"
+    },
+    {
+     "group": "GripperRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 2 Gripper CCW",
+     "key": "03f8cb4b-8a60-484b-9ccc-c6890c14853d",
+     "addr": "17"
+    }
+   ]
+  },
+  {
+   "prefab": "VisionSensor",
+   "key": "4ad07759-58e5-4c8c-9cd0-e9bf758c6ae9",
+   "pos": [
+    255,
+    16,
+    120
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Vision Sensor 0",
+     "key": "10bbba50-4621-4c94-88c9-1544bbbc772d",
+     "addr": "11"
+    }
+   ]
+  },
+  {
+   "prefab": "Emitter",
+   "key": "feb1ced8-6612-4716-8e9e-09cb54306a7f",
+   "pos": [
+    256,
+    9,
+    113
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Emitter 0 (Emit)",
+     "key": "7a6e1552-e726-4610-a458-915e242ac9f6",
+     "addr": "0"
+    }
+   ]
+  },
+  {
+   "prefab": "ChuteConveyorLow",
+   "key": "567f96dc-ed04-45e5-b135-5789b45ec53b",
+   "pos": [
+    272,
+    2,
+    171
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "TwoAxisPickNPlace",
+   "key": "7a23a4b9-e08c-430a-b222-1f64fcde7287",
+   "pos": [
+    259,
+    10,
+    143
+   ],
+   "ios": [
+    {
+     "group": "Picker",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 0 (Moving Z)",
+     "key": "dc8f1e45-0ff6-4d31-b645-6ed9a31a0133",
+     "addr": "4"
+    },
+    {
+     "group": "Picker",
+     "tag": "AnalogueInput",
+     "name": "Two-Axis Pick &amp; Place 0 Z Position (V)",
+     "key": "358d3802-03c7-4a1d-b426-853bd740c8fd",
+     "addr": "2"
+    },
+    {
+     "group": "Picker",
+     "tag": "AnalogueOutput",
+     "name": "Two-Axis Pick &amp; Place 0 Z Set Point (V)",
+     "key": "1b1343c7-ab20-4dcc-93f4-d7b0cb277d0f",
+     "addr": "2"
+    },
+    {
+     "group": "Arm",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 0 (Moving X)",
+     "key": "7af8d321-2ac0-4eb6-bbcf-e57d47063471",
+     "addr": "5"
+    },
+    {
+     "group": "Arm",
+     "tag": "AnalogueInput",
+     "name": "Two-Axis Pick &amp; Place 0 X Position (V)",
+     "key": "e771d630-97b3-48d5-b5a6-d4d5b666f3b2",
+     "addr": "3"
+    },
+    {
+     "group": "Arm",
+     "tag": "AnalogueOutput",
+     "name": "Two-Axis Pick &amp; Place 0 X Set Point (V)",
+     "key": "9b45141c-16aa-44bb-9079-35374c062f04",
+     "addr": "3"
+    },
+    {
+     "group": "Gripper",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 0 (Item Detected)",
+     "key": "f14012cc-255d-4282-8326-eca8149fe55b",
+     "addr": "6"
+    },
+    {
+     "group": "Gripper",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 0 (Grab)",
+     "key": "c2d60518-b063-4588-b230-616dd2f8c292",
+     "addr": "5"
+    },
+    {
+     "group": "ArmRotate",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 0 (Rotating)",
+     "key": "1a582178-a2d4-4e61-99bc-6235c7471380",
+     "addr": "7"
+    },
+    {
+     "group": "ArmRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 0 Rotate CW",
+     "key": "af3e7a7a-a54b-417c-a74a-89ce5997404a",
+     "addr": "6"
+    },
+    {
+     "group": "ArmRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 0 Rotate CCW",
+     "key": "064de49a-3935-40e4-801e-bb6f6e9b6a80",
+     "addr": "7"
+    },
+    {
+     "group": "GripperRotate",
+     "tag": "BinaryInput",
+     "name": "Two-Axis Pick &amp; Place 0 (Gripper Rotating)",
+     "key": "ea4829c3-8889-4291-8721-9979e4a8de63",
+     "addr": "8"
+    },
+    {
+     "group": "GripperRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 0 Gripper CW",
+     "key": "bc44b7cf-0b86-4330-bf85-56765d48e876",
+     "addr": "8"
+    },
+    {
+     "group": "GripperRotate",
+     "tag": "BinaryOutput",
+     "name": "Two-Axis Pick &amp; Place 0 Gripper CCW",
+     "key": "3b35a064-cb50-47c7-b2c9-44eaab364bf6",
+     "addr": "9"
+    }
+   ]
+  },
+  {
+   "prefab": "VisionSensor",
+   "key": "c8c9b472-f8c6-4fbe-bc4f-ca7a3043712a",
+   "pos": [
+    271,
+    16,
+    160
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Vision Sensor 1",
+     "key": "72ed98ed-2878-4d94-a298-2c36b5238dfe",
+     "addr": "19"
+    }
+   ]
+  },
+  {
+   "prefab": "BeltConveyor2M",
+   "key": "766a3490-4706-489a-9b18-fbd14ed55cae",
+   "pos": [
+    272,
+    3,
+    132
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Belt Conveyor (2m) 2",
+     "key": "87d7707a-9cb1-452d-a62a-142b2dc6c593",
+     "addr": "26"
+    }
+   ]
+  },
+  {
+   "prefab": "Pusher",
+   "key": "f938590c-66a3-41ae-8d68-bd6f1b8e7101",
+   "pos": [
+    264,
+    7,
+    160
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Pusher 0",
+     "key": "261158fd-3a20-4e42-8956-b7ead91a226b",
+     "addr": "10"
+    },
+    {
+     "group": "Front",
+     "tag": "BinaryInput",
+     "name": "Pusher 0 (Front Limit)",
+     "key": "27bed374-8496-4b60-8450-99c680b176c1",
+     "addr": "37"
+    },
+    {
+     "group": "Back",
+     "tag": "BinaryInput",
+     "name": "Pusher 0 (Back Limit)",
+     "key": "9e9c9b1c-82b2-4986-8fc1-f6e9450d18d1",
+     "addr": "39"
+    }
+   ]
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "f4cb1c65-1693-449a-ad8f-eccdcdaefadc",
+   "pos": [
+    256,
+    -1,
+    138
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "87daa5ad-5ffa-4e10-b392-7f99428d7545",
+   "pos": [
+    256,
+    -1,
+    128
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Turntable",
+   "key": "e5bb3bc1-6497-4e4f-b4b0-cc389cef1733",
+   "pos": [
+    270,
+    6,
+    143
+   ],
+   "ios": [
+    {
+     "group": "roll",
+     "tag": "BinaryOutput",
+     "name": "Turntable 1 Roll (+)",
+     "key": "20ad842b-33de-4b95-b770-a9a1a21a11fb",
+     "addr": "1"
+    },
+    {
+     "group": "reverse",
+     "tag": "BinaryOutput",
+     "name": "Turntable 1 Roll (-)",
+     "key": "b462cbb0-8b05-4939-96c2-e624d6a0d116",
+     "addr": "2"
+    },
+    {
+     "group": "turn",
+     "tag": "BinaryOutput",
+     "name": "Turntable 1 Turn",
+     "key": "be642bc4-cac5-40d4-9dea-b8afa1f5d808",
+     "addr": "12"
+    },
+    {
+     "group": "limitSwitch0",
+     "tag": "BinaryInput",
+     "name": "Turntable 1 (Limit 0)",
+     "key": "da804c25-8372-4c39-9054-f814ba071d3e",
+     "addr": "0"
+    },
+    {
+     "group": "limitSwitch90",
+     "tag": "BinaryInput",
+     "name": "Turntable 1 (Limit 90)",
+     "key": "d273c3ce-1a4a-4b10-8f3a-560f4c60f5c7",
+     "addr": "1"
+    },
+    {
+     "group": "frontLimit",
+     "tag": "BinaryInput",
+     "name": "Turntable 1 (Front Limit)",
+     "key": "34af723b-8d8e-4139-bf2b-6d6373add85d",
+     "addr": "2"
+    },
+    {
+     "group": "backLimit",
+     "tag": "BinaryInput",
+     "name": "Turntable 1 (Back Limit)",
+     "key": "a34748d8-25c9-46c3-9d44-23e135a88202",
+     "addr": "3"
+    }
+   ]
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "85155b46-c43e-42f9-9c73-cd79b1b8599c",
+   "pos": [
+    272,
+    -1,
+    148
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "c5682e88-1c4a-4633-bda1-ee4f087c0537",
+   "pos": [
+    272,
+    -1,
+    140
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "6f305a8e-128e-4d62-a075-d760546dc6d0",
+   "pos": [
+    259,
+    9,
+    90
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 4",
+     "key": "96699985-87d4-4a63-9982-bde101e23cba",
+     "addr": "13"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "fcacbb93-9e16-414c-b33a-c50c735f29a6",
+   "pos": [
+    276,
+    9,
+    90
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 5",
+     "key": "686475c9-f06e-4cc3-9ec4-e0cf3462a0d6",
+     "addr": "22"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "4175b49b-f603-4045-81ef-d967cd1593c5",
+   "pos": [
+    293,
+    9,
+    90
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 6",
+     "key": "701c810d-f078-44dc-958e-4562423da516",
+     "addr": "23"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "c1f93e67-85af-417e-aaa2-fc0f515aba39",
+   "pos": [
+    310,
+    9,
+    90
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 7",
+     "key": "d012209c-cb86-4fd6-b1dd-1df6f1d18a8d",
+     "addr": "29"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "69189587-198b-417a-9f7b-cc5c637f3521",
+   "pos": [
+    319,
+    9,
+    102
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 8",
+     "key": "59f717e3-01b2-46fc-a998-a976782c4753",
+     "addr": "30"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "7bfb6907-b14d-40b8-834a-9f56e7732db9",
+   "pos": [
+    319,
+    9,
+    119
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 9",
+     "key": "06819683-52d4-40d3-bf55-ce811c911f78",
+     "addr": "31"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "01e2448e-07af-4d0d-a486-59c5eb4e5758",
+   "pos": [
+    319,
+    9,
+    136
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 10",
+     "key": "8dd0a07b-fb9f-4693-9ede-5997c2feb5c1",
+     "addr": "32"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "4994036a-04bd-47b5-be0e-1fb9273928ff",
+   "pos": [
+    319,
+    9,
+    153
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 11",
+     "key": "09d350be-dc79-417f-b4bb-8c79d12f3488",
+     "addr": "33"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "00b06bbd-fa53-42df-b8b1-e87793536ec7",
+   "pos": [
+    258,
+    9,
+    197
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 12",
+     "key": "8986f835-b0de-4ba8-b4ec-1bdfc166b498",
+     "addr": "34"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "781b020d-83e0-4279-8703-d9b4d8410f37",
+   "pos": [
+    319,
+    9,
+    170
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 13",
+     "key": "5f02247f-cb28-485a-9f32-20be8d4db036",
+     "addr": "35"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "35bc0c25-957e-4e4d-812d-f5255c2a4dec",
+   "pos": [
+    248,
+    9,
+    186
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 16",
+     "key": "fa27f8d6-a583-4423-b930-d40459b34ed1",
+     "addr": "38"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "1977a318-ed92-49cd-b36a-8b41d8914111",
+   "pos": [
+    248,
+    9,
+    168
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 0",
+     "key": "60cca4f9-8140-4d20-bfa7-32eed7901833",
+     "addr": "9"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "a78c8229-c8bb-446f-a4cc-5e3fb35d1ef8",
+   "pos": [
+    248,
+    9,
+    151
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 1",
+     "key": "60a17713-04bd-4730-9f6d-dfed013f114a",
+     "addr": "10"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "5db3d129-fe99-43ec-8fd6-e7c97d003d94",
+   "pos": [
+    248,
+    9,
+    117
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 3",
+     "key": "8f4f284d-caed-4121-9404-5d58e18f70fe",
+     "addr": "12"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "a542c3c7-1939-4f63-b369-e337ed47fee1",
+   "pos": [
+    248,
+    9,
+    100
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 14",
+     "key": "bf0375ce-7c36-4d03-a5ca-6e9a838c25ae",
+     "addr": "36"
+    }
+   ]
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "a8aa6458-8db0-40cf-8174-f8704ea5734c",
+   "pos": [
+    263,
+    3,
+    161
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "43fd69fd-aca9-43fa-8027-627fa52fb228",
+   "pos": [
+    263,
+    5,
+    161
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "7ca2ef0e-8e3e-40f6-8b4b-857a80e6364c",
+   "pos": [
+    275,
+    8,
+    155
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "1613380a-d712-45da-aa6c-b5e344327594",
+   "pos": [
+    267,
+    8,
+    155
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "143d85a9-79de-460c-a112-a0973cbabdab",
+   "pos": [
+    275,
+    8,
+    166
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "1f173af1-b891-4789-badd-0dd00b32eaed",
+   "pos": [
+    271,
+    15,
+    153
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "79643ec9-905d-40cb-8592-df06cefece36",
+   "pos": [
+    271,
+    18,
+    167
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "bf4ba83b-e79f-487a-877c-416e9ca804fd",
+   "pos": [
+    270,
+    15,
+    160
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "1c5b1ea7-0b3b-4bee-885f-fed4784414d1",
+   "pos": [
+    267,
+    8,
+    166
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "eed654ab-465c-48b0-9a4a-f0a0324f818c",
+   "pos": [
+    252,
+    8,
+    119
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "8bc2c15f-4763-4100-b93b-6b24f5f26cbf",
+   "pos": [
+    260,
+    8,
+    119
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "a6b3a9f0-2dab-4089-b15b-71afcfd098a1",
+   "pos": [
+    256,
+    18,
+    120
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "e9870338-8e10-48cd-9b1c-cbb32804c06b",
+   "pos": [
+    255,
+    15,
+    113
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "22bb06af-729b-44d8-94f3-99001085fd14",
+   "pos": [
+    260,
+    8,
+    109
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "bf31a244-3db6-43a7-8da1-d45e9a73c4d3",
+   "pos": [
+    256,
+    18,
+    110
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "Column",
+   "key": "eeeb93fd-31a3-4354-8bd1-e2ca6b76c37e",
+   "pos": [
+    252,
+    8,
+    109
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "c47f255d-82ba-445e-9fbb-cf54b8072009",
+   "pos": [
+    263,
+    4,
+    161
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "313c2869-0cb8-4a9c-a033-b8dfa4860cdb",
+   "pos": [
+    272,
+    1,
+    140
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "FreeRoller",
+   "key": "ed456908-27f4-4bdd-b5cc-cc8a64d541d2",
+   "pos": [
+    272,
+    1,
+    148
+   ],
+   "ios": []
+  },
+  {
+   "prefab": "DiffusePhotoelectricSensor",
+   "key": "e8d5fd6c-8df0-4e7f-9172-3bac945aed5e",
+   "pos": [
+    270,
+    8,
+    129
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Diffuse Sensor 0",
+     "key": "bdc451a5-848f-4098-adcb-be81c305ac60",
+     "addr": "24"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "007109d7-abdd-4f09-a59a-c56b8742e8b7",
+   "pos": [
+    248,
+    9,
+    134
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 2",
+     "key": "fed0bead-2d40-496b-b989-4e8e0ba1db33",
+     "addr": "20"
+    }
+   ]
+  },
+  {
+   "prefab": "Remover",
+   "key": "df475957-2d0f-45d3-b8ce-123997124f4c",
+   "pos": [
+    272,
+    1,
+    180
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Remover 0 (Remove)",
+     "key": "bcd30e36-b912-4ceb-a17b-4fbc18aa2c63",
+     "addr": "11"
+    }
+   ]
+  },
+  {
+   "prefab": "Remover",
+   "key": "7a1bc9cc-d3f4-4175-913c-d643250d9c2c",
+   "pos": [
+    288,
+    1,
+    161
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Remover 1 (Remove)",
+     "key": "53b31dd6-affb-4ff7-9524-78d8868070b6",
+     "addr": "13"
+    }
+   ]
+  },
+  {
+   "prefab": "SafetyDoor",
+   "key": "ed13c01d-e7bb-45a1-b360-247f61132335",
+   "pos": [
+    319,
+    9,
+    187
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryInput",
+     "name": "Safety Door 15",
+     "key": "719d4386-6cbb-46a9-99df-b9e7ce0276de",
+     "addr": "21"
+    }
+   ]
+  },
+  {
+   "prefab": "StopBlade",
+   "key": "a7fec861-74d7-403c-adce-16d5318053d0",
+   "pos": [
+    272,
+    9,
+    132
+   ],
+   "ios": [
+    {
+     "group": "Default",
+     "tag": "BinaryOutput",
+     "name": "Stop Blade 0",
+     "key": "a0c4a4fd-577d-4bc5-889e-a4eecaa9927b",
+     "addr": "18"
+    }
+   ]
+  }
+ ],
+ "mapping": [
+  {
+   "ioTag": "BitInput",
+   "idx": 0,
+   "prefab": "VisionSensor",
+   "pos": [
+    255,
+    16,
+    120
+   ],
+   "group": "Default",
+   "name": "Vision Sensor 0",
+   "kind": "BinaryInput",
+   "addr": "11"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 1,
+   "prefab": "VisionSensor",
+   "pos": [
+    271,
+    16,
+    160
+   ],
+   "group": "Default",
+   "name": "Vision Sensor 1",
+   "kind": "BinaryInput",
+   "addr": "19"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 2,
+   "prefab": "Turntable",
+   "pos": [
+    256,
+    5,
+    132
+   ],
+   "group": "limitSwitch0",
+   "name": "Turntable 0 (Limit 0)",
+   "kind": "BinaryInput",
+   "addr": "25"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 3,
+   "prefab": "Turntable",
+   "pos": [
+    256,
+    5,
+    132
+   ],
+   "group": "limitSwitch90",
+   "name": "Turntable 0 (Limit 90)",
+   "kind": "BinaryInput",
+   "addr": "26"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 4,
+   "prefab": "Turntable",
+   "pos": [
+    270,
+    6,
+    143
+   ],
+   "group": "limitSwitch0",
+   "name": "Turntable 1 (Limit 0)",
+   "kind": "BinaryInput",
+   "addr": "0"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 5,
+   "prefab": "Turntable",
+   "pos": [
+    270,
+    6,
+    143
+   ],
+   "group": "limitSwitch90",
+   "name": "Turntable 1 (Limit 90)",
+   "kind": "BinaryInput",
+   "addr": "1"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 6,
+   "prefab": "DiffusePhotoelectricSensor",
+   "pos": [
+    270,
+    8,
+    129
+   ],
+   "group": "Default",
+   "name": "Diffuse Sensor 0",
+   "kind": "BinaryInput",
+   "addr": "24"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 7,
+   "prefab": "Pusher",
+   "pos": [
+    264,
+    7,
+    160
+   ],
+   "group": "Front",
+   "name": "Pusher 0 (Front Limit)",
+   "kind": "BinaryInput",
+   "addr": "37"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 8,
+   "prefab": "Pusher",
+   "pos": [
+    264,
+    7,
+    160
+   ],
+   "group": "Back",
+   "name": "Pusher 0 (Back Limit)",
+   "kind": "BinaryInput",
+   "addr": "39"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 9,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    259,
+    10,
+    143
+   ],
+   "group": "Arm",
+   "name": "Two-Axis Pick &amp; Place 0 (Moving X)",
+   "kind": "BinaryInput",
+   "addr": "5"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 10,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    259,
+    10,
+    143
+   ],
+   "group": "Picker",
+   "name": "Two-Axis Pick &amp; Place 0 (Moving Z)",
+   "kind": "BinaryInput",
+   "addr": "4"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 11,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    269,
+    10,
+    126
+   ],
+   "group": "Arm",
+   "name": "Two-Axis Pick &amp; Place 2 (Moving X)",
+   "kind": "BinaryInput",
+   "addr": "15"
+  },
+  {
+   "ioTag": "BitInput",
+   "idx": 12,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    269,
+    10,
+    126
+   ],
+   "group": "Picker",
+   "name": "Two-Axis Pick &amp; Place 2 (Moving Z)",
+   "kind": "BinaryInput",
+   "addr": "14"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 0,
+   "prefab": "Emitter",
+   "pos": [
+    256,
+    9,
+    113
+   ],
+   "group": "Default",
+   "name": "Emitter 0 (Emit)",
+   "kind": "BinaryOutput",
+   "addr": "0"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 1,
+   "prefab": "BeltConveyor2M",
+   "pos": [
+    256,
+    3,
+    117
+   ],
+   "group": "Default",
+   "name": "Belt Conveyor (2m) 0",
+   "kind": "BinaryOutput",
+   "addr": "3"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 2,
+   "prefab": "BeltConveyor2M",
+   "pos": [
+    272,
+    3,
+    132
+   ],
+   "group": "Default",
+   "name": "Belt Conveyor (2m) 2",
+   "kind": "BinaryOutput",
+   "addr": "26"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 3,
+   "prefab": "BeltConveyor2M",
+   "pos": [
+    271,
+    4,
+    159
+   ],
+   "group": "Default",
+   "name": "Belt Conveyor (2m) 1",
+   "kind": "BinaryOutput",
+   "addr": "4"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 4,
+   "prefab": "Turntable",
+   "pos": [
+    256,
+    5,
+    132
+   ],
+   "group": "roll",
+   "name": "Turntable 0 Roll (+)",
+   "kind": "BinaryOutput",
+   "addr": "34"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 5,
+   "prefab": "Turntable",
+   "pos": [
+    256,
+    5,
+    132
+   ],
+   "group": "reverse",
+   "name": "Turntable 0 Roll (-)",
+   "kind": "BinaryOutput",
+   "addr": "35"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 6,
+   "prefab": "Turntable",
+   "pos": [
+    256,
+    5,
+    132
+   ],
+   "group": "turn",
+   "name": "Turntable 0 Turn",
+   "kind": "BinaryOutput",
+   "addr": "36"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 7,
+   "prefab": "Turntable",
+   "pos": [
+    270,
+    6,
+    143
+   ],
+   "group": "roll",
+   "name": "Turntable 1 Roll (+)",
+   "kind": "BinaryOutput",
+   "addr": "1"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 8,
+   "prefab": "Turntable",
+   "pos": [
+    270,
+    6,
+    143
+   ],
+   "group": "reverse",
+   "name": "Turntable 1 Roll (-)",
+   "kind": "BinaryOutput",
+   "addr": "2"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 9,
+   "prefab": "Turntable",
+   "pos": [
+    270,
+    6,
+    143
+   ],
+   "group": "turn",
+   "name": "Turntable 1 Turn",
+   "kind": "BinaryOutput",
+   "addr": "12"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 12,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    269,
+    10,
+    126
+   ],
+   "group": "Gripper",
+   "name": "Two-Axis Pick &amp; Place 2 (Grab)",
+   "kind": "BinaryOutput",
+   "addr": "110"
+  },
+  {
+   "ioTag": "BitOutput",
+   "idx": 15,
+   "prefab": "Pusher",
+   "pos": [
+    264,
+    7,
+    160
+   ],
+   "group": "Default",
+   "name": "Pusher 0",
+   "kind": "BinaryOutput",
+   "addr": "10"
+  },
+  {
+   "ioTag": "NumericOutput",
+   "idx": 0,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    269,
+    10,
+    126
+   ],
+   "group": "Arm",
+   "name": "Two-Axis Pick &amp; Place 2 X Set Point (V)",
+   "kind": "AnalogueOutput",
+   "addr": "1"
+  },
+  {
+   "ioTag": "NumericOutput",
+   "idx": 1,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    269,
+    10,
+    126
+   ],
+   "group": "Picker",
+   "name": "Two-Axis Pick &amp; Place 2 Z Set Point (V)",
+   "kind": "AnalogueOutput",
+   "addr": "0"
+  },
+  {
+   "ioTag": "NumericOutput",
+   "idx": 2,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    259,
+    10,
+    143
+   ],
+   "group": "Arm",
+   "name": "Two-Axis Pick &amp; Place 0 X Set Point (V)",
+   "kind": "AnalogueOutput",
+   "addr": "3"
+  },
+  {
+   "ioTag": "NumericOutput",
+   "idx": 3,
+   "prefab": "TwoAxisPickNPlace",
+   "pos": [
+    259,
+    10,
+    143
+   ],
+   "group": "Picker",
+   "name": "Two-Axis Pick &amp; Place 0 Z Set Point (V)",
+   "kind": "AnalogueOutput",
+   "addr": "2"
+  }
+ ]
+}

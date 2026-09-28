@@ -1,0 +1,21 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- 运行时产生的文件（每次跑产线都会变，不入库）----
+*.log
+arm_trace.log
+arm_pos.log
+climb_log_*.json
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

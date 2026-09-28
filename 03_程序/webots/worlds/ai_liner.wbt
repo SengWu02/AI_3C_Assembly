@@ -1,0 +1,295 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+
+WorldInfo {
+  info [
+    "4-station rotary table assembly island"
+    "Stations: Vision -> Screw -> Glue -> Inspection"
+  ]
+  title "3C Assembly Line - AI Line Manager"
+}
+Viewpoint {
+  orientation -0.4941410811409401 -0.7458099815263524 0.4467572756928811 5.535768400126962
+  position -5.362678041796155 0.8466013878762615 3.8476187865271627
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 6 6
+}
+Solid {
+  translation 0 0 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.4 0.4 0.4
+        roughness 0.8
+      }
+      geometry Cylinder {
+        height 0.6
+        radius 1.3
+      }
+    }
+  ]
+  name "TABLE_BASE"
+  boundingObject Cylinder {
+    height 0.6
+    radius 1.3
+  }
+  physics Physics {
+  }
+}
+Solid {
+  translation 0 0 0.7
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.5 0.8
+        roughness 0.6
+      }
+      geometry Cylinder {
+        height 0.15
+      }
+    }
+    Pose {
+      translation 0.7 0.1 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 0 0
+          }
+          geometry Box {
+            size 0.2 0.05 0.2
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0 0.1 0.7
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0 1 0
+          }
+          geometry Box {
+            size 0.2 0.05 0.2
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -0.7 0.1 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0 0 1
+          }
+          geometry Box {
+            size 0.2 0.05 0.2
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0 0.1 -0.7
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 1 0
+          }
+          geometry Box {
+            size 0.2 0.05 0.2
+          }
+        }
+      ]
+    }
+  ]
+  name "ROTARY_TABLE"
+  boundingObject Cylinder {
+    height 0.15
+  }
+  physics Physics {
+  }
+}
+Solid {
+  translation 3.52079e-14 -0.94 1.05
+  rotation 0 0 1 3.14159
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.3 0.3
+      }
+      geometry Box {
+        size 0.08 0.6 0.08
+      }
+    }
+    Pose {
+      translation 0 -0.25 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0 1 0
+            emissiveColor 0 0.3 0
+          }
+          geometry Sphere {
+            radius 0.06
+          }
+        }
+      ]
+    }
+  ]
+  name "STATION_VISION"
+}
+Solid {
+  translation 0.94 -0.12 1.05
+  rotation 0 0 1 -1.5707953071795862
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.3 0.3
+      }
+      geometry Box {
+        size 0.08 0.6 0.08
+      }
+    }
+    Pose {
+      translation 0 -0.25 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.8 0.8 0.8
+            metalness 0.9
+          }
+          geometry Cylinder {
+            height 0.15
+            radius 0.025
+          }
+        }
+      ]
+    }
+  ]
+  name "STATION_SCREW"
+}
+Solid {
+  translation -0.11 0.690003 1.05
+  rotation 0.004700979766516536 9.589689523709093e-09 -0.9999889503335698 -5.307179586466759e-06
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.3 0.3
+      }
+      geometry Box {
+        size 0.08 0.6 0.08
+      }
+    }
+    Pose {
+      translation 0 -0.25 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 1 0.2
+          }
+          geometry Cone {
+            bottomRadius 0.03
+            height 0.1
+          }
+        }
+      ]
+    }
+  ]
+  name "STATION_GLUE"
+}
+Solid {
+  translation -0.93 -0.04 1.05
+  rotation 0 0 -1 -1.5707953071795862
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.3 0.3
+      }
+      geometry Box {
+        size 0.08 0.6 0.08
+      }
+    }
+    Pose {
+      translation 0 -0.25 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0 1 1
+            emissiveColor 0 0.5 0.5
+          }
+          geometry Sphere {
+            radius 0.05
+          }
+        }
+      ]
+    }
+  ]
+  name "STATION_INSPECT"
+}
+Solid {
+  translation 1.5 1.50599e-06 0.76
+  rotation -1 0 0 1.5708
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.5 0.5 0.5
+      }
+      geometry Box {
+        size 1 0.05 0.4
+      }
+    }
+  ]
+  name "INFEED"
+  boundingObject Box {
+    size 1 0.05 0.4
+  }
+  physics Physics {
+  }
+}
+Solid {
+  translation -1.37 0.48 0.66
+  rotation 0.577349935856137 0.5773509358560258 -0.577349935856137 -2.094395307179586
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0 0.6 0
+      }
+      geometry Box {
+        size 0.4 0.05 0.8
+      }
+    }
+  ]
+  name "OUTFEED_OK"
+  boundingObject Box {
+    size 0.4 0.05 0.8
+  }
+  physics Physics {
+  }
+}
+Solid {
+  translation -1.40201 -0.375847 0.65782
+  rotation 0.5783269446188362 -0.5753919448998946 -0.5783269446188362 2.09293
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.6 0 0
+      }
+      geometry Box {
+        size 0.4 0.05 0.8
+      }
+    }
+  ]
+  name "OUTFEED_NG"
+  boundingObject Box {
+    size 0.4 0.05 0.8
+  }
+  physics Physics {
+  }
+}
