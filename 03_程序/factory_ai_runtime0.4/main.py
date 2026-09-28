@@ -946,8 +946,12 @@ def produce_one(modbus_client):
     saw_ok = False        # 看到过"绿料"（= False）
     last_val = None
     _val_changes = 0      # 电平变化次数（用来判断"到底有没有料经过"）
+    start = time.time()   # ★ 等待窗口的起点（原来这行被注释块盖掉了，会 NameError）
     # ★ 皮带3 的运行上限（从步骤4 开算）。到点无论有没有结果都要停，
     #   否则料会一路冲过推杆位置，NG 就推不到了。
+    #   注意：用 _belt3_left 换算成"从现在起还能等多久"，
+    #   而不是用绝对时刻比较 —— 这样和 start 的语义一致，也不会因为
+    #   _belt3_left 为负数（已经超时）而把窗口算成负的。
     _belt3_deadline = start + max(_belt3_left, 0.5)
     _belt3_stopped = False
     while time.time() - start < VISION_WAIT_TIMEOUT:
