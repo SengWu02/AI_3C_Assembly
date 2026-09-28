@@ -711,7 +711,11 @@ def produce_one(modbus_client):
       stations_passed: {1: True, 2: True, 3: True, 4: False} 各工位是否通过
     """
 
-    is_ok = False                     # 本件最终判定，先默认不良，步骤5 会改写
+    is_ok = False                     # 本件最终判定（True=良品），步骤5 会改写
+    # ★ 三分类结论（2026-09-28）：良品 / 不良 / 漏料
+    #   为什么单独拿出来：is_ok 只有 True/False 两态，
+    #   而"不良"和"漏料"要分开统计（现场要看的是这两个数各是多少）。
+    verdict = "未知"                  # 步骤5 会改成 良品/不良/漏料
     step_times = {}                   # 各步骤耗时，给爬坡日志用
     _step_start = time.time()         # 当前步骤的起始时刻（下面每步开头会重置）
 
@@ -924,10 +928,24 @@ def produce_one(modbus_client):
     #     传感器本身是好的 —— 不是传感器坏。
     # ==========================================================================
     print(f"等待料通过视觉位（超时{VISION_WAIT_TIMEOUT}秒）...")
-    start = time.time()
-    saw_ng = False        # 是否看到过"蓝料"（= True）
-    saw_ok = False        # 是否看到过"绿料"（= False）
+    # ★★★ 判定口径（2026-09-28 现场确认）★★★
+    #     VISION_1 = True   -> 蓝色料 -> 不良
+    #     VISION_1 = False  -> 绿色料 -> 良品
+    #     一直读不到（超时/料没到）-> 漏料 -> 也算一件，计入总数
+    #
+    #  ⚠ 坑：VISION_1 = False 在"绿料经过"和"根本没有料"两种情况下都成立，
+    #     所以不能一读到 False 就判良品 —— 必须确认"确实有料经过视觉位"。
+    #     判据：只要在等待窗口内读到过至少一次有效电平变化（或稳定读到），
+    #     且没有一直读不到的情况，就算"料到了"。
+    #     实现上用一个"看到过料"的标记：
+    #       · 读到 True（蓝）      -> 料到了，且是不良
+    #       · 读到 False（绿）     -> 料到了，且是良品
+    #       · 全程只有 False 且从未变过 -> 无法区分"绿料"和"没料"
+    #         这时用 VISION_MISS_GRACE 之后仍未出现任何变化 来判定漏料
+    saw_ng = False        # 看到过"蓝料"（= True）
+    saw_ok = False        # 看到过"绿料"（= False）
     last_val = None
+    _val_changes = 0      # 电平变化次数（用来判断"到底有没有料经过"）
     # ★ 皮带3 的运行上限（从步骤4 开算）。到点无论有没有结果都要停，
     #   否则料会一路冲过推杆位置，NG 就推不到了。
     _belt3_deadline = start + max(_belt3_left, 0.5)
@@ -935,73 +953,164 @@ def produce_one(modbus_client):
     while time.time() - start < VISION_WAIT_TIMEOUT:
         val = bool(modbus_client.read_input(VISION_1_INPUT))
         if val != last_val:
-            _c = "蓝=NG" if val else "绿=OK"
+            _val_changes += 1 if last_val is not None else 0
+            _c = "蓝=不良" if val else "绿=良品"
             _arm_trace(f"[视觉] VISION_1 -> {val}  ({_c})"
                        f"  (皮带3 已转 {time.time() - _belt3_t0:.1f}s)")
             last_val = val
         if val:
+            # ---- 读到 True = 蓝色 = 不良 ----
             saw_ng = True
-            # ★ 看到蓝料（NG）立刻停皮带，让料停在推杆前面
-            modbus_client.write_coil(BELT_3_COIL, False)
+            modbus_client.write_coil(BELT_3_COIL, False)   # 立刻停皮带，等推杆
             _belt3_stopped = True
-            print(f"★ 视觉读到 True（蓝色 = NG）→ 停皮带3，推杆推出"
+            print(f"★ 视觉读到 True（蓝色 = 不良）→ 停皮带3，推杆推出"
                   f"（皮带3 共转 {time.time() - _belt3_t0:.1f}s）")
             break
         else:
-            saw_ok = True     # 读到 False = 绿料，继续走
+            # ---- 读到 False = 绿色 = 良品 ----
+            #   ⚠ 但 False 也可能是"根本没有料"，所以这里只记录，不急着下结论
+            saw_ok = True
         # ★ 皮带3 转够时间了就停，别再等（料要停在推杆够得着的位置）
-        #   如果刚才是"看到 NG 已停皮带"，saw_ng 分支已经 break 出去了，
-        #   不会走到这里；这条是给"一直没看到料"的情况兜底。
         if time.time() > _belt3_deadline:
             if not _belt3_stopped:
                 modbus_client.write_coil(BELT_3_COIL, False)
                 _belt3_stopped = True
                 print(f"  [belt3] 到运行上限 {BELT3_RUN_TIME}s，先停皮带3 等视觉结果")
-            # ★ 停了之后还要再等一小会儿 —— 料可能刚被拦停在视觉位附近，
-            #   再给它 VISION_STOP_SETTLE 的时间让传感器稳定读到
+            # ★ 停了之后再多看一会儿 —— 料可能刚被拦停在视觉位附近
             _wait = VISION_STOP_SETTLE
             while time.time() - start < VISION_WAIT_TIMEOUT and _wait > 0:
                 val2 = bool(modbus_client.read_input(VISION_1_INPUT))
+                if val2 != last_val:
+                    _val_changes += 1
+                    last_val = val2
                 if val2:
                     saw_ng = True
-                    print("  停皮带后又读到 True（蓝=NG）→ 按 NG 处理")
+                    print("  停皮带后又读到 True（蓝=不良）→ 按不良处理")
                     break
-                saw_ok = True
                 time.sleep(0.05)
                 _wait -= 0.05
             break
         time.sleep(0.05)
 
+    # ★★★ 三分类判定（2026-09-28）★★★
+    #   良品 / 不良 / 漏料 —— 三种都要计数，良率才算得准。
+    _final_val = bool(modbus_client.read_input(VISION_1_INPUT))
+    # 判"到底有没有料经过"：读过 True，或者电平至少变过一次
+    _saw_piece = saw_ng or (_val_changes >= 1)
+
     if saw_ng:
-        # ---- NG 分支：推到不良仓位 ----
+        # ================= 不良（蓝色）=================
         time.sleep(VISION_STOP_SETTLE)                 # 停稳再推，避免料还在滑
         modbus_client.write_coil(PUSHER_COIL, True)    # 推杆推出
         time.sleep(PUSHER_PUSH_TIME)
         modbus_client.write_coil(PUSHER_COIL, False)   # 推杆收回
         time.sleep(PUSHER_BACK_TIME)
         is_ok = False
-        print("NG 料已推出")
-    elif saw_ok:
-        # ---- OK 分支：不停皮带，让它走过去 ----
+        verdict = "不良"
+        print(f"判定：不良（蓝色） | 电平变化 {_val_changes} 次")
+    elif _saw_piece:
+        # ================= 良品（绿色）=================
         is_ok = True
-        print("视觉读到 False（绿色 = OK）→ 不停皮带，直接放行")
+        verdict = "良品"
+        print(f"判定：良品（绿色） | 电平变化 {_val_changes} 次"
+              f" | 皮带3 共转 {time.time() - _belt3_t0:.1f}s")
         time.sleep(BELT3_PASS_TIME)                     # 让料走离视觉位再停
         modbus_client.write_coil(BELT_3_COIL, False)
     else:
-        # ---- 超时：没看到任何料 ----
-        print("★ 超时没看到料，当前视觉值:", modbus_client.read_input(VISION_1_INPUT))
-        modbus_client.write_coil(BELT_3_COIL, False)
+        # ================= 漏料 =================
+        #  说明：VISION_1 全程一直是同一个值、从没变过，
+        #        也没读到过 True —— 无法确认有料经过，判为漏料。
+        #        ★ 漏料也算一件，计入总数（不然良率会虚高）。
         is_ok = False
+        verdict = "漏料"
+        print(f"★ 判定：漏料 | 全程电平未变（最终值 {_final_val}）"
+              f" | 皮带3 共转 {time.time() - _belt3_t0:.1f}s")
+        modbus_client.write_coil(BELT_3_COIL, False)
 
                 # ====== 步骤6: 返回结果 ======
     _mark_step("step5")         # 本件结束 → 回到空闲
     stations_passed[4] = is_ok          # 工位4 的判定就是视觉结果
 
-    return is_ok, step_times, stations_passed
+    # ★ 返回值：判定结果、分步耗时、各工位通过情况、三分类结论
+    return is_ok, step_times, stations_passed, verdict
     
 
 
 # ========== LLM 线长（决策者） ==========
+def _llm_decision_to_human(decision, assessment, actions, adjustments,
+                           cycle_before, cycle_after, verdict_counts,
+                           overall_yield, efficiency_ppm):
+    """★ 把 LLM 的 JSON 决策翻译成【人话】（2026-09-28）
+
+    为什么不让模型直接说人话：
+      4B 模型输出自由文本时容易跑偏、幻觉、不说重点。
+      而它输出 JSON 很稳（实测 3/3）。所以：
+        · 让模型负责【判断】（它的强项）
+        · 让它按固定 JSON 格式回来
+        · 由这里把结构化结果翻译成人话（这样措辞永远可控）
+
+    返回两行文本：(摘要行, 详情行)
+    """
+    # ---------- 第一行：结论 ----------
+    mood = {
+        "正常": "产线正常",
+        "需要优化": "产线需要优化",
+        "异常": "产线异常",
+    }.get(str(assessment), f"产线状态：{assessment}")
+
+    # ---------- 第二行：判断依据 + 动作 + 调整 ----------
+    bits = []
+
+    # 生产数据
+    vc = verdict_counts or {}
+    tot = sum(vc.values()) if vc else 0
+    if tot:
+        bits.append(f"已生产 {tot} 件（良品 {vc.get('良品', 0)}、"
+                    f"不良 {vc.get('不良', 0)}、漏料 {vc.get('漏料', 0)}）")
+    bits.append(f"良率 {overall_yield}%")
+    bits.append(f"效率 {efficiency_ppm} 件/分")
+
+    # 动作翻译
+    act_cn = {
+        "rotate": "让转盘转一位",
+        "alarm_on": "打开报警灯",
+        "alarm_off": "关闭报警灯",
+        "stop": "停线",
+        "continue": "继续生产",
+    }
+    if actions:
+        names = [act_cn.get(a, a) for a in actions]
+        # "继续生产"是最常见的、没信息量的动作，放最后且不重复说
+        bits.append("动作：" + "、".join(names))
+
+    # 节拍调整（说清楚"从多少改到多少"，以及为什么）
+    if cycle_after is not None and cycle_before is not None \
+            and abs(cycle_after - cycle_before) >= 0.05:
+        direction = "压快" if cycle_after < cycle_before else "放慢"
+        bits.append(f"节拍{direction}：{cycle_before}s → {cycle_after}s")
+    elif adjustments and "cycle_time" in adjustments:
+        bits.append(f"节拍维持 {cycle_before}s（建议值 {adjustments['cycle_time']}s 与当前接近）")
+
+    return mood, "；".join(bits)
+
+
+def _update_llm_label(app, mood, detail):
+    """把两行文本写到 GUI 的 LLM 决策栏（失败不影响产线）"""
+    try:
+        app.update_data(
+            production_count=production_count,
+            target=target,
+            station_stats=station_stats,
+            llm_status="工作中" if llm_running else "待命",
+            ai_score=governance.get_status()["ai_score"],
+            alarm=modbus_client.get_coil(ALARM_COIL),
+            cycle=cycle_count,
+            llm_decision=f"{mood}｜{detail}",
+        )
+    except Exception as e:
+        print("刷新 LLM 显示失败:", e)
+
+
 def parse_production_input(text):
     """用LLM解析用户输入的产量目标"""
     prompt = f"""你是一个3C组装岛调度系统。
@@ -1099,6 +1208,9 @@ def run_llm_line_leader(llm, event_manager, governance, modbus_client, station_s
         if adjustments:
             print(f"    调整: {adjustments}")
 
+        # ★ 记下调整前的节拍（人话总结里要说"从多少改到多少"）
+        _cycle_before = PRODUCTION_CYCLE_TIME
+
         # 应用节拍调整（★ 2026-09-28 加了护栏）
         if "cycle_time" in adjustments:
             try:
@@ -1128,10 +1240,18 @@ def run_llm_line_leader(llm, event_manager, governance, modbus_client, station_s
                 else:
                     print(f"    LLM 建议 {want:.1f}s，与当前 {PRODUCTION_CYCLE_TIME}s 相差不大，不调整")
 
-        # 更新仪表盘 LLM 决策
-        decision_text = f"{assessment} → {', '.join(actions) if actions else '无操作'}"
-        if adjustments:
-            decision_text += f" | 调整: {adjustments}"
+        # ★ 更新仪表盘 LLM 决策 —— 翻译成人话（2026-09-28）
+        #   原来显示的是 "需要优化 → continue | 调整: {'cycle_time': 2.5}"，
+        #   又长又难懂。现在翻译成：
+        #       "产线需要优化｜已生产 24 件（良品 18、不良 5、漏料 1）；
+        #        良率 75.0%；效率 1.2 件/分；继续生产；节拍压快：3.0s → 2.5s"
+        _mood, _detail = _llm_decision_to_human(
+            decision, assessment, actions, adjustments,
+            cycle_before=_cycle_before, cycle_after=PRODUCTION_CYCLE_TIME,
+            verdict_counts=verdict_counts,
+            overall_yield=overall_yield, efficiency_ppm=efficiency_ppm)
+        decision_text = f"{_mood}｜{_detail}"
+        print(f"    → 人话总结: {decision_text}")
         dashboard_app.update_data(
             production_count=production_count,
             target=target,
@@ -1142,7 +1262,10 @@ def run_llm_line_leader(llm, event_manager, governance, modbus_client, station_s
             cycle=cycle_count,
             last_result=None,
             llm_decision=decision_text,
+            verdict_counts=dict(verdict_counts),
         )
+        # 这条也进事件日志栏（方便回看 LLM 每次说了什么）
+        event_manager.add_event("LLM_DECISION", decision_text)
 
         # 执行 LLM 决策
         for action in actions:
@@ -1325,6 +1448,24 @@ app.on_continue = _ui_continue
 app.cycle_entry.delete(0, "end")
 app.cycle_entry.insert(0, f"{PRODUCTION_CYCLE_TIME:.1f}")
 
+# ★★★ 三分类计数器（2026-09-28）★★★
+#   良品 / 不良 / 漏料 —— 三种都算一件，良率才有意义。
+#   ★ 为什么"漏料"也要计入总数：
+#       料根本没到视觉位，如果只统计"看到的那些"，良率会被算高。
+#       实际损失必须体现出来，否则数字好看但不对。
+verdict_counts = {"良品": 0, "不良": 0, "漏料": 0}
+
+
+def _current_verdict_summary():
+    """给 GUI / 日志用的一句话汇总"""
+    ok_n = verdict_counts["良品"]
+    ng_n = verdict_counts["不良"]
+    miss_n = verdict_counts["漏料"]
+    tot = ok_n + ng_n + miss_n
+    yld = round(ok_n / tot * 100, 1) if tot else 0.0
+    return (f"良品 {ok_n} / 不良 {ng_n} / 漏料 {miss_n}"
+            f"（共 {tot} 件，良率 {yld}%）")
+
 
 # ========== 生产线程 ==========
 def production_loop():
@@ -1354,16 +1495,28 @@ def production_loop():
         if production_count < target:          # 还没做够目标件数才生产
             print(f"\n=== 第 {production_count + 1} 件 ===")
             # ★★ 调用核心流程。这一句就是"做一件产品"，
-            #    里面的耗时决定整个节拍。返回三个值：
-            #      last_result     本件 OK/NG
+            #    里面的耗时决定整个节拍。返回四个值：
+            #      last_result     本件是否良品（True/False）
             #      step_times      每步耗时（写进爬坡日志）
             #      stations_passed 各工位是否通过（更新统计用）
-            last_result, step_times, stations_passed = produce_one(modbus_client)
+            #      verdict         ★ 三分类结论：良品 / 不良 / 漏料
+            last_result, step_times, stations_passed, verdict = \
+                produce_one(modbus_client)
             production_count += 1
             try:
                 app.set_step(0)       # ★ 本件结束，仪表盘回到"空闲"
             except Exception:
                 pass
+
+            # ★ 三分类计数（2026-09-28）
+            #   良品 / 不良 / 漏料 三种都要数，良率才有意义。
+            #   ★ 漏料也计入总数 —— 不然"料根本没到"不会被算作损失，良率会虚高。
+            if verdict == "良品":
+                verdict_counts["良品"] += 1
+            elif verdict == "不良":
+                verdict_counts["不良"] += 1
+            else:
+                verdict_counts["漏料"] += 1
 
             # 更新各工位统计（GUI 良率 / LLM 分析都读这里）
             for sid, passed in stations_passed.items():
@@ -1373,6 +1526,14 @@ def production_loop():
                 st["total"] += 1                 # 该工位过料数 +1
                 if passed:
                     st["ok"] += 1                # 通过数 +1
+                # ★ 顺便记下这个工位的三分类（只有成品检测工位有真实三态）
+                if sid == 4:
+                    if verdict == "良品":
+                        st["ok_kind"] = st.get("ok_kind", 0) + 1
+                    elif verdict == "不良":
+                        st["ng_kind"] = st.get("ng_kind", 0) + 1
+                    else:
+                        st["miss_kind"] = st.get("miss_kind", 0) + 1
                 # 良率 = 通过 / 总数。★ 注意分母是"过了这个工位的件数"，不是总产量
                 st["yield_pct"] = round(st["ok"] / st["total"] * 100, 1)
 
@@ -1381,12 +1542,14 @@ def production_loop():
             climb_log.append({
                 "index": production_count,       # 第几件
                 "cycle_time": round(cycle_elapsed, 2),  # 整节拍（秒）
-                "is_ok": last_result,            # 本件 OK/NG
+                "is_ok": last_result,            # 本件是否良品（True/False）
+                "verdict": verdict,              # ★ 三分类：良品/不良/漏料
                 "steps": step_times,             # ★ 分步耗时，调产线主要看这个
                 "timestamp": time.strftime("%H:%M:%S")
             })
             climb_start = time.time()            # 重置，开始算下一件
-            print(f"   爬坡: 第{production_count}件 | 节拍{cycle_elapsed:.2f}s | {'OK' if last_result else 'NG'}")
+            print(f"   爬坡: 第{production_count}件 | 节拍{cycle_elapsed:.2f}s | {verdict}")
+            print(f"         累计: {_current_verdict_summary()}")
 
             # 产品输出后，工位4恢复待命色
             app.update_data(
@@ -1397,13 +1560,14 @@ def production_loop():
                 ai_score=governance.get_status()["ai_score"],
                 alarm=modbus_client.get_coil(ALARM_COIL),
                 cycle=cycle_count,
-                last_result=None,
+                last_result=(verdict == "良品"),  # ★ 界面按三分类上色
                 cycle_time=cycle_elapsed,        # ★ 本件节拍（画趋势图）
                 params=_current_params(),        # ★ 当前关键参数一览
+                verdict_counts=dict(verdict_counts),   # ★ 三分类计数
             )
             # 记一条到 GUI 日志栏
-            app.log(f"第{production_count}件完成 | 节拍 {cycle_elapsed:.1f}s | "
-                    f"{'OK' if last_result else 'NG'}")
+            app.log(f"第{production_count}件完成 | 节拍 {cycle_elapsed:.1f}s | {verdict}"
+                    f" | {_current_verdict_summary()}")
             # 节拍等待：每件之间固定歇一下。
             # ★ 这个值会被 LLM 改（所以调产线时要把 config.LLM_ENABLED 设为 False），
             #   默认值在 config.PRODUCTION_CYCLE_TIME（3.0 秒）

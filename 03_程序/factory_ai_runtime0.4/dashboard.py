@@ -480,6 +480,20 @@ class DashboardApp:
                                    fg="#a0a0a0", anchor="w")
         self.cycle_best.pack(anchor="w")
 
+        # ---- 三分类计数（良品 / 不良 / 漏料）----
+        #  ★ 漏料也算一件 —— 料根本没到就不能算"没发生"，
+        #    不然良率会虚高。这里三个数加起来 = 已生产件数。
+        tk.Label(p, text="判定分类", font=("微软雅黑", 11, "bold"),
+                 bg="#0a0a0f", fg="#ff6600").pack(anchor="w", pady=(10, 4))
+        self.verdict_label = tk.Label(p, text="良品 0   不良 0   漏料 0",
+                                      font=("Consolas", 9), bg="#0a0a0f",
+                                      fg="#a0a0a0", anchor="w", justify="left")
+        self.verdict_label.pack(anchor="w")
+        self.verdict_yield = tk.Label(p, text="良率 --%",
+                                      font=("微软雅黑", 10, "bold"), bg="#0a0a0f",
+                                      fg="#44ff44", anchor="w")
+        self.verdict_yield.pack(anchor="w", pady=(2, 0))
+
         # ---- 参数一览（只读，方便一眼看到当前用的值）----
         tk.Label(p, text="当前参数", font=("微软雅黑", 11, "bold"),
                  bg="#0a0a0f", fg="#ff6600").pack(anchor="w", pady=(10, 4))
@@ -792,13 +806,15 @@ class DashboardApp:
 
     def update_data(self, production_count, target, station_stats, llm_status,
                     ai_score, alarm, cycle, last_result=None, llm_decision=None,
-                    cycle_time=None, params=None):
+                    cycle_time=None, params=None, verdict_counts=None):
         """更新仪表盘数据。【可从任意线程调用】
 
-        last_result:   True=OK, False=NG, None=无产品
-        llm_decision:  AI线长最新决策文本
-        cycle_time:    ★ 本件实际节拍（秒）。给了就记进节拍趋势图
-        params:        ★ 当前关键参数 dict，显示在"当前参数"栏
+        last_result:    True=良品, False=不良/漏料, None=无产品
+        llm_decision:   AI线长最新决策文本
+        cycle_time:     ★ 本件实际节拍（秒）。给了就记进节拍趋势图
+        params:         ★ 当前关键参数 dict，显示在"当前参数"栏
+        verdict_counts: ★ 三分类计数 {"良品":n, "不良":n, "漏料":n}
+                          漏料也算一件 —— 良率才准
 
         ★ 实现说明：这里【不直接碰控件】，只把数据打包塞进队列，
           由主线程的 _tick 取出来应用。原因见 __init__ 里 _q 的注释。
@@ -815,6 +831,7 @@ class DashboardApp:
             "llm_decision": llm_decision,
             "cycle_time": cycle_time,
             "params": params,
+            "verdict_counts": verdict_counts,
         }))
 
     def _apply_data(self, d):
@@ -832,6 +849,8 @@ class DashboardApp:
             "last_result": d["last_result"],
             "llm_decision": d["llm_decision"] if d["llm_decision"] is not None else old_decision,
             "params": d["params"] if d["params"] is not None else old_params,
+            "verdict_counts": (d.get("verdict_counts") if d.get("verdict_counts") is not None
+                               else self._data.get("verdict_counts")),
         }
         # ★ 记录节拍历史（给趋势图用）
         if d["cycle_time"] is not None:
@@ -866,6 +885,28 @@ class DashboardApp:
             self.cycle_best.config(
                 text=f"最快: {min(hist):.1f}s   平均: {sum(hist)/len(hist):.1f}s")
             self._draw_cycle_mini()
+
+        # ★ 三分类计数
+        vc = d.get("verdict_counts")
+        if vc:
+            ok_n = vc.get("良品", 0)
+            ng_n = vc.get("不良", 0)
+            ms_n = vc.get("漏料", 0)
+            tot = ok_n + ng_n + ms_n
+            self.verdict_label.config(
+                text=f"良品 {ok_n}   不良 {ng_n}   漏料 {ms_n}")
+            if tot:
+                y = ok_n / tot * 100
+                # 良率颜色：>=90 绿、>=70 橙、否则红
+                col = "#44ff44" if y >= 90 else ("#ffaa00" if y >= 70 else "#ff4444")
+                self.verdict_yield.config(
+                    text=f"良率 {y:.1f}%   （共 {tot} 件）", fg=col)
+            else:
+                self.verdict_yield.config(text="良率 --%", fg="#a0a0a0")
+        # ★ 旧口径「良品 x/y」也同步（保留兼容）
+        if vc:
+            self.info_labels["良品"].config(
+                text=f"{vc.get('良品', 0)}/{sum(vc.values())}")
 
         # ★ 参数一览
         p = d.get("params")
