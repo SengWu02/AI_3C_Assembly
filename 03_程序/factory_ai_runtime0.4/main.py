@@ -883,30 +883,54 @@ def produce_one(modbus_client):
     _mark_step("step4")
     _step_start = time.time()
    
-    # 等待视觉触发（当前约定：True = OK）
-    # ⚠ 这个方向还没在现场确认过：现场视觉是 NC 逻辑时 True 其实是 NG。
-    #   先确认"料到底有没有走到视觉1"，再决定要不要反过来（见复盘报告 §5）。
-    print(f"等待视觉触发（超时{VISION_WAIT_TIMEOUT}秒）...")
+    # ==========================================================================
+    # ★★★ 视觉极性（2026-09-28 现场确认）★★★
+    #     VISION_1_INPUT = True   → 蓝色料 = NG → 停皮带3 + 推杆推出去
+    #     VISION_1_INPUT = False  → 绿色料 = OK → 不停，正常走过去
+    #
+    #  ⚠ 之前代码是反的（把 True 当 OK、False 当 NG），已纠正。
+    #     之前"读到的全是 NG"是因为现场只放了绿料、没放蓝料，
+    #     传感器本身是好的 —— 不是传感器坏。
+    # ==========================================================================
+    print(f"等待料通过视觉位（超时{VISION_WAIT_TIMEOUT}秒）...")
     start = time.time()
-    detected = False
+    saw_ng = False        # 是否看到过"蓝料"（= True）
+    saw_ok = False        # 是否看到过"绿料"（= False）
+    last_val = None
     while time.time() - start < VISION_WAIT_TIMEOUT:
-        val = modbus_client.read_input(VISION_1_INPUT)
-        if val == True:
-            print("视觉触发！读到 True（当前约定=OK）")
-            detected = True
+        val = bool(modbus_client.read_input(VISION_1_INPUT))
+        if val != last_val:
+            _c = "蓝=NG" if val else "绿=OK"
+            _arm_trace(f"[视觉] VISION_1 -> {val}  ({_c})")
+            last_val = val
+        if val:
+            saw_ng = True
+            # ★ 看到蓝料（NG）立刻停皮带，让料停在推杆前面
+            modbus_client.write_coil(BELT_3_COIL, False)
+            print("★ 视觉读到 True（蓝色 = NG）→ 停皮带3，推杆推出")
             break
+        else:
+            saw_ok = True     # 读到 False = 绿料，继续走
         time.sleep(0.05)
 
-    if detected:
-        print("停皮带3，推杆推出...")
-        modbus_client.write_coil(BELT_3_COIL, False)
-        modbus_client.write_coil(PUSHER_COIL, True)
-        time.sleep(1)
-        print("推杆收回...")
-        modbus_client.write_coil(PUSHER_COIL, False)
+    if saw_ng:
+        # ---- NG 分支：推到不良仓位 ----
+        time.sleep(VISION_STOP_SETTLE)                 # 停稳再推，避免料还在滑
+        modbus_client.write_coil(PUSHER_COIL, True)    # 推杆推出
+        time.sleep(PUSHER_PUSH_TIME)
+        modbus_client.write_coil(PUSHER_COIL, False)   # 推杆收回
+        time.sleep(PUSHER_BACK_TIME)
+        is_ok = False
+        print("NG 料已推出")
+    elif saw_ok:
+        # ---- OK 分支：不停皮带，让它走过去 ----
         is_ok = True
+        print("视觉读到 False（绿色 = OK）→ 不停皮带，直接放行")
+        time.sleep(BELT3_PASS_TIME)                     # 让料走离视觉位再停
+        modbus_client.write_coil(BELT_3_COIL, False)
     else:
-        print("超时未触发，当前视觉值:", modbus_client.read_input(VISION_1_INPUT))
+        # ---- 超时：没看到任何料 ----
+        print("★ 超时没看到料，当前视觉值:", modbus_client.read_input(VISION_1_INPUT))
         modbus_client.write_coil(BELT_3_COIL, False)
         is_ok = False
 
