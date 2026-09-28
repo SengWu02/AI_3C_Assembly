@@ -50,9 +50,26 @@ for node in ast.walk(tree):
             used.add(node.attr)
 print("")
 print(f"main.py 用到的 app.* ({len(used)}):")
-for a in sorted(used):
-    has = hasattr(DashboardApp, a)
-    print(f"    {'OK  ' if has else '★缺失'} app.{a}")
+# ★ 注意：on_set_cycle / cycle_entry 这些是【实例属性】（在 __init__ 里赋值的），
+#   查 DashboardApp 这个【类】是查不到的 —— 必须实例化后再查。
+#   （第一版就是查了类，误报一堆"缺失"。）
+try:
+    _inst = DashboardApp()
+    _missing = []
+    for a in sorted(used):
+        has = hasattr(_inst, a)
+        print(f"    {'OK  ' if has else '★缺失'} app.{a}")
+        if not has:
+            _missing.append(a)
+    # 顺便确认人工介入的 5 个回调挂载点都在
+    print("")
+    print("人工介入回调挂载点:")
+    for a in ("on_set_cycle", "on_stop", "on_resume", "on_pause", "on_continue"):
+        has = hasattr(_inst, a) and a in ("on_set_cycle",)
+        print(f"    {'OK  ' if hasattr(_inst, a) else '★缺失'} app.{a}")
+    _inst.root.destroy()
+except Exception as e:
+    print("    ★ 实例化失败:", e)
 
 # 3) event_manager.sink 是否被赋值
 if "sink" in src:

@@ -25,10 +25,27 @@ class DashboardApp:
 
         # ★ 窗口放大：右边加"步骤进度"栏，下面加"事件日志"栏
         self.root.geometry("1256x900")
-        self.root.resizable(False, False)
+        # ★★ 允许调整大小（2026-09-28）
+        #    画布布局的缩放交给 Tk 自己：先记下"设计尺寸"，窗口一变就按比例缩放。
+        self.root.resizable(True, True)
+        self.root.minsize(1050, 760)      # 再小就放不下了
         self.root.configure(bg="#0a0a0f")
 
+        # ★★★ 人工介入的回调（main.py 负责挂上来）★★★
+        #  为什么用回调而不是让 dashboard 直接 import main：
+        #    那样会循环依赖，而且测试脚本想单独跑 GUI 就跑不起来。
+        #  没挂回调时按钮点了会有提示，不会崩。
+        self.on_set_cycle = None      # def f(seconds) -> None
+        self.on_stop = None           # def f() -> None
+        self.on_resume = None         # def f() -> None
+        self.on_pause = None          # def f() -> None
+        self.on_continue = None       # def f() -> None
+
         self._build_ui()
+
+        # ★ 记下画布的设计尺寸，用于等比缩放
+        self._canvas_base = (960, 540)
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
 
         # 数据缓存
         self._data = {
@@ -91,17 +108,24 @@ class DashboardApp:
         ).pack(pady=10)
 
         # ========== 中部：左边画布 + 右边步骤进度栏 ==========
+        #  ★ expand=True 让中部吃掉窗口的剩余高度，画布才能真正长大
+        #    （原来只 fill="x"，高度锁死在 540，窗口拉高也没用）
         mid = tk.Frame(root, bg="#0a0a0f")
-        mid.pack(fill="x")
+        mid.pack(fill="both", expand=True)
 
+        # ★ 画布改成"可拉伸"：窗口放大时画布跟着大，内部图形等比缩放
         self.canvas = tk.Canvas(mid, width=960, height=540, bg="#0a0a0f",
                                 highlightthickness=0)
-        self.canvas.pack(side="left")
+        self.canvas.pack(side="left", fill="both", expand=True)   # ★ 横向纵向都拉伸
 
         self._build_step_panel(mid)
 
         # 绘制轮盘静态元素
         self._draw_rotary_table()
+
+        # ★★ 人工介入面板：必须在【画完布局之后】建，
+        #    这样它才叠在整个画布最上层（place 的层序按创建顺序）。
+        self._build_manual_panel()
 
         # ========== 底部信息栏 ==========
         info_frame = tk.Frame(root, bg="#1a0a00", height=140)
@@ -144,6 +168,254 @@ class DashboardApp:
         # ★ 事件日志栏（最下面）
         self._build_log_panel(info_frame)
 
+    # ---------- 画布右上角：人工介入面板 ----------
+
+    def _build_manual_panel(self):
+        """★ 画布右上角的人工介入面板（悬浮在画布上）。
+
+        功能：
+          · 节拍输入 + 设定      —— 立即改 PRODUCTION_CYCLE_TIME
+          · 紧急停线 / 恢复       —— 停到人工恢复为止
+          · 暂停 / 继续          —— 件与件之间生效，不把工件扔在半路
+
+        ★ 用 place() 而不是 pack()：这样它悬浮在画布上，
+          而且窗口拉伸时可以用相对坐标(relx=1.0 anchor=n)自动贴住右上角。
+        """
+        f = tk.Frame(self.canvas, bg="#14141c",
+                     highlightthickness=1, highlightbackground="#ff6600")
+        # relx=1.0 + anchor="ne" = 永远贴住父容器右上角
+        f.place(relx=1.0, rely=0.0, x=-10, y=10, anchor="ne")
+        self.manual_panel = f
+
+        tk.Label(f, text="⚙ 人工介入", font=("微软雅黑", 9, "bold"),
+                 bg="#14141c", fg="#ff6600").grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(6, 4))
+
+        # ---- 节拍设定 ----
+        tk.Label(f, text="节拍(秒)", font=("微软雅黑", 8), bg="#14141c",
+                 fg="#a0a0a0").grid(row=1, column=0, sticky="w", padx=(8, 2))
+        self.cycle_entry = tk.Entry(f, width=6, font=("Consolas", 10),
+                                    bg="#0d0d14", fg="#ff6600",
+                                    insertbackground="#ff6600",
+                                    justify="center", bd=0,
+                                    highlightthickness=1,
+                                    highlightbackground="#444450")
+        self.cycle_entry.grid(row=1, column=1, sticky="e", padx=(0, 8))
+        self.cycle_entry.insert(0, "3.0")
+        self.cycle_entry.bind("<Return>", lambda e: self._cb_set_cycle())
+
+        def _btn(text, row, col, color, cb, colspan=1):
+            b = tk.Button(f, text=text, font=("微软雅黑", 8),
+                          bg="#1e1e28", fg=color,
+                          activebackground="#2a2a38", activeforeground=color,
+                          relief="flat", bd=0, cursor="hand2",
+                          command=cb, padx=6, pady=2)
+            b.grid(row=row, column=col, columnspan=colspan,
+                   sticky="ew", padx=(8, 8) if colspan == 2 else (8, 2), pady=2)
+            return b
+
+        _btn("设定节拍", 2, 0, "#ffaa00", self._cb_set_cycle, colspan=2)
+
+        # ---- 停线 / 恢复 ----
+        _btn("■ 紧急停线", 3, 0, "#ff4444", self._cb_stop)
+        _btn("▶ 恢复", 3, 1, "#44ff44", self._cb_resume)
+
+        # ---- 暂停 / 继续 ----
+        _btn("‖ 暂停", 4, 0, "#ffaa00", self._cb_pause)
+        _btn("▶ 继续", 4, 1, "#44ff44", self._cb_continue)
+
+        # ---- 状态显示 ----
+        self.manual_status = tk.Label(f, text="就绪", font=("微软雅黑", 8),
+                                      bg="#14141c", fg="#a0a0a0",
+                                      wraplength=170, justify="left")
+        self.manual_status.grid(row=5, column=0, columnspan=2,
+                                sticky="w", padx=8, pady=(4, 6))
+
+    # ---------- 人工介入按钮的实际动作 ----------
+
+    def _manual_note(self, text, color="#a0a0a0"):
+        """在面板上显示一行反馈（不是日志，只是给操作者看）"""
+        try:
+            self.manual_status.config(text=text, fg=color)
+        except Exception:
+            pass
+
+    def _cb_set_cycle(self):
+        """点「设定节拍」：读输入框 -> 校验 -> 交给 main.py 回调"""
+        raw = self.cycle_entry.get().strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            self._manual_note(f"★ \"{raw}\" 不是数字", "#ff4444")
+            return
+        ok, msg = self._validate_cycle(v)
+        if not ok:
+            self._manual_note("★ " + msg, "#ff4444")
+            return
+        if self.on_set_cycle is None:
+            self._manual_note("★ 未接入产线（只看界面时无效）", "#ffaa00")
+            return
+        try:
+            self.on_set_cycle(v)
+            self._manual_note(f"节拍已设为 {v}s", "#44ff44")
+        except Exception as e:
+            self._manual_note(f"★ 设置失败: {e}", "#ff4444")
+
+    def _validate_cycle(self, v):
+        """节拍范围和 config 里的护栏保持一致（避免 GUI 能设、main 又拦掉）"""
+        lo, hi = 1.0, 10.0
+        try:
+            import config as _c
+            lo = getattr(_c, "LLM_CYCLE_MIN", 1.0)
+            hi = getattr(_c, "LLM_CYCLE_MAX", 10.0)
+        except Exception:
+            pass
+        if not (lo <= v <= hi):
+            return False, f"节拍要 {lo}~{hi} 秒之间"
+        return True, ""
+
+    def _cb_stop(self):
+        if self.on_stop is None:
+            self._manual_note("★ 未接入产线", "#ffaa00")
+            return
+        # 紧急停线是大事，加一道确认，避免误点
+        from tkinter import messagebox
+        if not messagebox.askyesno("确认", "确定要紧急停线？\n\n产线会立即停止，\n需要点「恢复」才能继续。"):
+            self._manual_note("已取消", "#a0a0a0")
+            return
+        try:
+            self.on_stop()
+            self._manual_note("★ 已紧急停线，点「恢复」继续", "#ff4444")
+        except Exception as e:
+            self._manual_note(f"★ 停线失败: {e}", "#ff4444")
+
+    def _cb_resume(self):
+        if self.on_resume is None:
+            self._manual_note("★ 未接入产线", "#ffaa00")
+            return
+        try:
+            self.on_resume()
+            self._manual_note("已恢复生产", "#44ff44")
+        except Exception as e:
+            self._manual_note(f"★ 恢复失败: {e}", "#ff4444")
+
+    def _cb_pause(self):
+        if self.on_pause is None:
+            self._manual_note("★ 未接入产线", "#ffaa00")
+            return
+        try:
+            self.on_pause()
+            self._manual_note("已暂停（当前件做完后停）", "#ffaa00")
+        except Exception as e:
+            self._manual_note(f"★ 暂停失败: {e}", "#ff4444")
+
+    def _cb_continue(self):
+        if self.on_continue is None:
+            self._manual_note("★ 未接入产线", "#ffaa00")
+            return
+        try:
+            self.on_continue()
+            self._manual_note("已继续生产", "#44ff44")
+        except Exception as e:
+            self._manual_note(f"★ 继续失败: {e}", "#ff4444")
+
+    # ---------- 画布缩放（窗口可调整）----------
+
+    def _on_canvas_resize(self, event):
+        """★ 窗口拉伸时，把画布里的图形【和字号】按比例缩放。
+
+        做法：canvas 自带的 scale() 只缩放坐标，【不会缩放文字】，
+        所以窗口拉大后会出现"框大了、字没大"的割裂感。
+        这里除了 scale() 坐标，还把每个文字的 font 按比例重设一遍。
+
+        每次都是从"基准尺寸 960x540"重新算到当前尺寸（不是累积缩放），
+        避免反复拉伸导致误差越滚越大。
+        """
+        bw, bh = self._canvas_base
+        w, h = max(event.width, 1), max(event.height, 1)
+        # 等比缩放（用较小的那个比例，避免拉伸变形）
+        s = min(w / bw, h / bh)
+        s = max(0.6, min(s, 2.0))          # 限制在合理范围
+        if abs(s - getattr(self, "_last_scale", 0.0)) < 0.02:
+            return                          # 变化太小，不动（避免频繁重绘）
+
+        try:
+            ls = getattr(self, "_last_scale", 1.0)
+            # 先缩回基准，再按新比例放大
+            if abs(ls - 1.0) > 0.001:
+                self.canvas.scale("all", 0, 0, 1.0 / ls, 1.0 / ls)
+                if not hasattr(self, "_base_fonts"):
+                    self._cache_base_fonts()
+            self.canvas.scale("all", 0, 0, s, s)
+            if not hasattr(self, "_base_fonts"):
+                self._cache_base_fonts()
+            self._scale_fonts(s)
+            self._last_scale = s
+        except Exception:
+            pass
+
+    def _cache_base_fonts(self):
+        """记下每个文字当前的字体（基准），后面按比例重设字体时用"""
+        self._base_fonts = {}
+        for i in self.canvas.find_all():
+            if self.canvas.type(i) != "text":
+                continue
+            try:
+                spec = self.canvas.itemcget(i, "font")
+                self._base_fonts[i] = self._parse_font(spec)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _parse_font(spec):
+        """把 Tk 的字体字符串解析成 (family, size, style)。
+
+        形如 "微软雅黑 9 bold" 或 "{Microsoft YaHei} 9"。解析不了就返回 None。
+        """
+        s = str(spec).strip()
+        if not s:
+            return None
+        family = ""
+        if s.startswith("{"):                       # 带空格的字体名
+            end = s.find("}")
+            if end < 0:
+                return None
+            family = s[1:end]
+            rest = s[end + 1:].strip()
+        else:
+            parts = s.split()
+            if len(parts) < 2:
+                return None
+            family = parts[0]
+            rest = " ".join(parts[1:])
+        toks = rest.split()
+        size = None
+        style = []
+        for t in toks:
+            try:
+                size = int(float(t))
+            except ValueError:
+                if t in ("bold", "italic", "underline", "overstrike"):
+                    style.append(t)
+        if size is None:
+            return None
+        return (family, size, " ".join(style))
+
+    def _scale_fonts(self, s):
+        """按比例重设所有文字的字体大小（最小 6，避免小到看不清）"""
+        for i, base in getattr(self, "_base_fonts", {}).items():
+            if base is None:
+                continue
+            fam, sz, style = base
+            new_sz = max(6, int(round(sz * s)))
+            try:
+                if style:
+                    self.canvas.itemconfig(i, font=(fam, new_sz, style))
+                else:
+                    self.canvas.itemconfig(i, font=(fam, new_sz))
+            except Exception:
+                pass
+
     # ---------- 右侧：生产步骤进度栏 ----------
 
     # ★ 步骤清单（和 main.py produce_one 里的 5 步一一对应）
@@ -157,9 +429,9 @@ class DashboardApp:
 
     def _build_step_panel(self, parent):
         """右边那一栏：当前走到第几步、每步耗时、节拍趋势、事件日志"""
-        p = tk.Frame(parent, bg="#0a0a0f", width=280)
-        p.pack(side="left", fill="both", expand=True, padx=(6, 0))
-        p.pack_propagate(False)
+        p = tk.Frame(parent, bg="#0a0a0f", width=286)
+        p.pack(side="left", fill="y", padx=(6, 6))
+        p.pack_propagate(False)          # ★ 固定宽度，不跟着窗口变
 
         # ---- 标题 ----
         tk.Label(p, text="生产步骤", font=("微软雅黑", 11, "bold"),

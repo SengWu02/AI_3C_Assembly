@@ -1210,6 +1210,77 @@ event_manager.sink = app.log
 app.log("系统启动 · 仪表盘就绪")
 
 
+# ★★★ 人工介入回调（GUI 右上角面板 -> 产线）★★★
+#  为什么走回调：dashboard 不能直接 import main（会循环依赖），
+#  所以由 main 把函数挂上去，GUI 按钮点了就调这些函数。
+def _ui_set_cycle(seconds):
+    """人工设定节拍（秒）——GUI 面板"设定节拍"。"""
+    global PRODUCTION_CYCLE_TIME
+    try:
+        v = float(seconds)
+    except (TypeError, ValueError):
+        return
+    # 和 LLM 用同一套护栏，避免"人工能设、别处又拦掉"的不一致
+    v = max(LLM_CYCLE_MIN, min(LLM_CYCLE_MAX, v))
+    old = PRODUCTION_CYCLE_TIME
+    PRODUCTION_CYCLE_TIME = round(v, 1)
+    event_manager.add_event("MANUAL_CYCLE",
+                            f"人工设定节拍 {old}s → {PRODUCTION_CYCLE_TIME}s")
+    print(f"\n[人工] 节拍已设定: {old}s → {PRODUCTION_CYCLE_TIME}s\n")
+
+
+def _ui_stop():
+    """人工紧急停线——GUI 面板"紧急停线"。"""
+    safety_manager.request_stop()
+    # 立刻把设备停掉，不等主循环下一轮（安全第一）
+    try:
+        for coil in (BELT_0_COIL, BELT_2_COIL, BELT_3_COIL,
+                     TABLE_A_ROLL_P_COIL, TABLE_A_ROLL_N_COIL, TABLE_A_TURN_COIL,
+                     TABLE_B_ROLL_P_COIL, TABLE_B_ROLL_N_COIL, TABLE_B_TURN_COIL,
+                     EMITTER_COIL):
+            modbus_client.write_coil(coil, False)
+        modbus_client.write_coil(ALARM_COIL, True)
+    except Exception as e:
+        print("人工停线时关设备出错:", e)
+    print("\n" + "!" * 50)
+    print("[人工] 紧急停线！产线已停止，点「恢复」才能继续")
+    print("!" * 50 + "\n")
+
+
+def _ui_resume():
+    """人工恢复——GUI 面板"恢复"。"""
+    safety_manager.clear_stop()
+    safety_manager.clear_pause()
+    try:
+        modbus_client.write_coil(ALARM_COIL, False)
+    except Exception:
+        pass
+    event_manager.add_event("MANUAL_RESUME", "人工恢复生产")
+    print("\n[人工] 已恢复生产\n")
+
+
+def _ui_pause():
+    """人工暂停——件与件之间生效，不会把工件扔在半路。"""
+    safety_manager.request_pause()
+    print("\n[人工] 暂停请求已收到（当前件做完后停住）\n")
+
+
+def _ui_continue():
+    """人工继续——解除暂停。"""
+    safety_manager.clear_pause()
+    event_manager.add_event("MANUAL_CONTINUE", "人工继续生产")
+    print("\n[人工] 已继续生产\n")
+
+
+app.on_set_cycle = _ui_set_cycle
+app.on_stop = _ui_stop
+app.on_resume = _ui_resume
+app.on_pause = _ui_pause
+app.on_continue = _ui_continue
+app.cycle_entry.delete(0, "end")
+app.cycle_entry.insert(0, f"{PRODUCTION_CYCLE_TIME:.1f}")
+
+
 # ========== 生产线程 ==========
 def production_loop():
     """★【主循环】跑在生产线程里，负责：调 produce_one、记产量、算统计、刷界面。
@@ -1346,12 +1417,35 @@ def production_loop():
         if efficiency_detector.has_changed() and efficiency_status["low_efficiency"]:
             event_manager.add_event("LOW_EFFICIENCY", "产能下降")
 
-        # --- 紧急停线 ---
+        # --- 紧急停线 / 人工介入 ---
         safety_manager.evaluate(jam_status, {"push_timeout": False})
         safety_status = safety_manager.get_status()
 
+        # ★★ 人工紧急停线（GUI 按钮）：一直停到人工点"恢复"为止。
+        #    只报一次事件，不然每 0.1 秒刷一条会把日志刷爆。
+        if safety_manager.manual_stop:
+            if not getattr(production_loop, "_manual_stop_notified", False):
+                production_loop._manual_stop_notified = True
+                event_manager.add_event("MANUAL_STOP", "人工紧急停线（等待人工恢复）")
+                print("\n! 人工停线：产线已停止，点「恢复」继续\n")
+            stop_rotary_table(modbus_client)
+            modbus_client.write_coil(ALARM_COIL, True)
+            time.sleep(LOOP_INTERVAL)
+            continue                      # ★ 卡在这里，不做任何生产动作
+        production_loop._manual_stop_notified = False
+
+        # ★★ 人工暂停：在"件与件之间"生效，不会把工件扔在半路
+        if safety_manager.manual_pause:
+            if not getattr(production_loop, "_manual_pause_notified", False):
+                production_loop._manual_pause_notified = True
+                event_manager.add_event("MANUAL_PAUSE", "人工暂停（当前件已做完）")
+                print("\n|| 人工暂停：件与件之间停住，点「继续」恢复\n")
+            time.sleep(LOOP_INTERVAL)
+            continue
+        production_loop._manual_pause_notified = False
+
+        # 自动检测到的卡堵（原逻辑）
         if safety_status["emergency_stop"]:
-            event_manager.add_event("EMERGENCY_STOP", "系统紧急停线")
             stop_rotary_table(modbus_client)
             print("! 紧急停线！转盘卡堵")
 
