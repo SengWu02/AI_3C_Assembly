@@ -777,10 +777,15 @@ def produce_one(modbus_client):
     #   改这里：config.TABLE_A_LOAD_WAIT
     time.sleep(TABLE_A_LOAD_WAIT)
 
-    # --- 1.3 全部停掉，让料在转盘中心停稳 ---
+    # --- 1.3 停滚轮和发料器，但【皮带0 再多转一会儿】 ---
+    #  ★★★ 2026-09-28 现场反馈"皮带1 有时送料不到位" ★★★
+    #    原来三个一起停：发料器吐完料就不需要转了，但皮带要把料送到
+    #    转盘A 门口还需要时间。一起停 -> 皮带停太早 -> 料没到门口，滚轮够不着。
+    #    现在让皮带0 比另外两个多转 BELT0_EXTRA_TIME 秒。
     modbus_client.write_coil(TABLE_A_ROLL_P_COIL, False)   # 停滚轮
-    modbus_client.write_coil(BELT_0_COIL, False)           # 停皮带0
     modbus_client.write_coil(EMITTER_COIL, False)          # 停发料
+    time.sleep(BELT0_EXTRA_TIME)                           # ★ 皮带0 继续转一段
+    modbus_client.write_coil(BELT_0_COIL, False)           # 再停皮带0
     # ★ 料刚进中心还有惯性，要停稳再转盘，否则转的时候料会偏、蹭到盘边
     time.sleep(TABLE_A_REST)
 
@@ -876,6 +881,12 @@ def produce_one(modbus_client):
     # --- 4.1 转盘B 滚轮 + 皮带3，把料送到视觉1 ---
     modbus_client.write_coil(TABLE_B_ROLL_P_COIL, True)    # 转盘B 滚轮正转（把料推出去）
     modbus_client.write_coil(BELT_3_COIL, True)            # 皮带机3（送到视觉1）
+    # ★★★ 2026-09-28 新增：记下皮带3 的启动时刻 ★★★
+    #   现场反馈"NG 时皮带3 不能及时停"。根因不是响应慢（轮询 50ms），
+    #   而是皮带3 原来要一路转到视觉判定，总时长 12.9 秒 ——
+    #   料在视觉位被看到时，已经冲过推杆位置，停皮带也救不回来。
+    #   现在给它一个独立的运行上限 BELT3_RUN_TIME，到点就停。
+    _belt3_t0 = time.time()
     # ★★ 这里原来是 time.sleep(.0) —— 等于没等，滚轮只转了 1.5 秒就被下面的
     #    write_coil(..., False) 停掉，料根本来不及从转盘走到皮带3，
     #    结果料留在转盘上、步骤5 等不到视觉 → 卡料。
@@ -889,6 +900,12 @@ def produce_one(modbus_client):
     _table_release(modbus_client, TABLE_B_TURN_COIL, TABLE_B_LIMIT_0_INPUT, what="B→0°复位")
     # 皮带3 继续走一段，确保料走到视觉1 的正下方
     time.sleep(TABLE_B_SETTLE)
+    # ★ 到这里皮带3 已经转了 (TABLE_B_PUSH_WAIT + 转盘B回0° + TABLE_B_SETTLE) 秒，
+    #   把剩余允许时间算出来，交给步骤5 用（超时就停皮带，别让它一直转）
+    _belt3_left = BELT3_RUN_TIME - (time.time() - _belt3_t0)
+    if ARM_MOVE_DEBUG:
+        print(f"      [belt3] 已转 {time.time() - _belt3_t0:.1f}s，"
+              f"还剩 {_belt3_left:.1f}s 到上限 {BELT3_RUN_TIME}s")
 
 
 
@@ -911,20 +928,48 @@ def produce_one(modbus_client):
     saw_ng = False        # 是否看到过"蓝料"（= True）
     saw_ok = False        # 是否看到过"绿料"（= False）
     last_val = None
+    # ★ 皮带3 的运行上限（从步骤4 开算）。到点无论有没有结果都要停，
+    #   否则料会一路冲过推杆位置，NG 就推不到了。
+    _belt3_deadline = start + max(_belt3_left, 0.5)
+    _belt3_stopped = False
     while time.time() - start < VISION_WAIT_TIMEOUT:
         val = bool(modbus_client.read_input(VISION_1_INPUT))
         if val != last_val:
             _c = "蓝=NG" if val else "绿=OK"
-            _arm_trace(f"[视觉] VISION_1 -> {val}  ({_c})")
+            _arm_trace(f"[视觉] VISION_1 -> {val}  ({_c})"
+                       f"  (皮带3 已转 {time.time() - _belt3_t0:.1f}s)")
             last_val = val
         if val:
             saw_ng = True
             # ★ 看到蓝料（NG）立刻停皮带，让料停在推杆前面
             modbus_client.write_coil(BELT_3_COIL, False)
-            print("★ 视觉读到 True（蓝色 = NG）→ 停皮带3，推杆推出")
+            _belt3_stopped = True
+            print(f"★ 视觉读到 True（蓝色 = NG）→ 停皮带3，推杆推出"
+                  f"（皮带3 共转 {time.time() - _belt3_t0:.1f}s）")
             break
         else:
             saw_ok = True     # 读到 False = 绿料，继续走
+        # ★ 皮带3 转够时间了就停，别再等（料要停在推杆够得着的位置）
+        #   如果刚才是"看到 NG 已停皮带"，saw_ng 分支已经 break 出去了，
+        #   不会走到这里；这条是给"一直没看到料"的情况兜底。
+        if time.time() > _belt3_deadline:
+            if not _belt3_stopped:
+                modbus_client.write_coil(BELT_3_COIL, False)
+                _belt3_stopped = True
+                print(f"  [belt3] 到运行上限 {BELT3_RUN_TIME}s，先停皮带3 等视觉结果")
+            # ★ 停了之后还要再等一小会儿 —— 料可能刚被拦停在视觉位附近，
+            #   再给它 VISION_STOP_SETTLE 的时间让传感器稳定读到
+            _wait = VISION_STOP_SETTLE
+            while time.time() - start < VISION_WAIT_TIMEOUT and _wait > 0:
+                val2 = bool(modbus_client.read_input(VISION_1_INPUT))
+                if val2:
+                    saw_ng = True
+                    print("  停皮带后又读到 True（蓝=NG）→ 按 NG 处理")
+                    break
+                saw_ok = True
+                time.sleep(0.05)
+                _wait -= 0.05
+            break
         time.sleep(0.05)
 
     if saw_ng:
