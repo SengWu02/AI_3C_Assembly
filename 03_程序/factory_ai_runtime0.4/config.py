@@ -449,10 +449,29 @@ ARM_TRACE_LOG = "arm_trace.log" # 日志文件名（写在程序运行目录）
 #  节拍被它改来改去，你就分不清某个变化是代码带来的还是 LLM 带来的，
 #  "一次只改一个变量"这件事根本做不到。
 #  等产线调稳了再改回 True。
-LLM_ENABLED = False
+LLM_ENABLED = True
 
-LLM_ANALYSIS_INTERVAL = 30      # LLM 多久分析一次（秒）。LLM_ENABLED=False 时无效
-LLM_MODEL = "gemma3:4B"         # Ollama 里的模型名
+# ★★★ 4B 模型护栏（2026-09-28 实测后加的）★★★
+#  实测 gemma3:4b（test_llm_capability.py）：
+#    · 产量目标解析    3/3 正确，4 秒左右
+#    · 产线状态评估    3/3 输出合法 JSON，12~15 秒
+#    · 异常识别        3/3 正确指出问题工位，30~39 秒
+#  结论：够用。但它有【随机性】—— 同一个状态三次给出 3.2 / 2.5 / 2.5 秒，
+#        而且 30 秒级的耗时意味着不能让它频繁介入。
+#
+#  所以加了三道护栏：
+#    1) 分析间隔放宽到 90 秒（它一次要跑 12~40 秒，30 秒间隔会一直占着）
+#    2) 每件最多调一次，且单次调整幅度受限（见 LLM_CYCLE_MAX_STEP）
+#    3) 节拍硬夹在 LLM_CYCLE_MIN ~ LLM_CYCLE_MAX 之间
+LLM_ANALYSIS_INTERVAL = 90      # 多久分析一次（秒）。实测一次要 12~40 秒，别设太小
+
+LLM_CYCLE_MIN = 1.0             # 节拍下限（秒）
+LLM_CYCLE_MAX = 8.0             # 节拍上限（秒）
+LLM_CYCLE_MAX_STEP = 1.0        # ★ 单次最多调整多少秒（防止一步调飞）
+                                #   实测它给的 3.2/2.5 都在这个范围内，正常
+LLM_CYCLE_DEFAULT = 3.0         # 初始节拍（LLM 还没介入前用这个）
+
+LLM_MODEL = "gemma3:4B"         # Ollama 里的模型名（实际是 gemma3:4b，大小写不敏感）
 LLM_BASE_URL = "http://localhost:11434/api/generate"   # Ollama 接口地址
 
 

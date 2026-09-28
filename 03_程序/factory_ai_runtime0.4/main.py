@@ -721,9 +721,19 @@ def produce_one(modbus_client):
     # 把统计那几行一起删掉了，导致 GUI/LLM 永远看到 0/0、良率100%。
     stations_passed = {1: False, 2: False, 3: False, 4: False}
 
-    def _mark_step(name):
-        """记录当前步骤耗时"""
+    def _mark_step(name, next_step=None):
+        """记录当前步骤耗时。
+
+        ★ 2026-09-28 新增 next_step：同时通知仪表盘"接下来做第几步"。
+          这样 GUI 右边的步骤进度栏能实时跟着走，而不是只有最后的结果。
+          next_step=None 表示这一件做完了（回到空闲）。
+        """
         step_times[name] = round(time.time() - _step_start, 2)
+        if next_step is not None:
+            try:
+                app.set_step(next_step)
+            except Exception:
+                pass          # GUI 出问题不影响生产
 
     # ==========================================================================
     #  步骤1：转盘A 接料 → 转回 0° → 送料到皮带2
@@ -731,6 +741,10 @@ def produce_one(modbus_client):
     # ==========================================================================
     print(">>> 步骤1: 转盘A转90°接料 → 回0° → 送料到皮带2")
     _step_start = time.time()         # ★ 重置计时起点，本步耗时从这里算
+    try:
+        app.set_step(1)               # ★ 通知仪表盘：开始步骤1
+    except Exception:
+        pass
     # ★ 两个臂【同时】初始化回零（节拍优化：原来串行约 6.8s，并行约 3.4s）
     #   两臂是独立的执行机构，互不干涉，可以同时下发命令、并行等待。
     _arm_home_both(modbus_client, tag="初始化双臂")
@@ -790,7 +804,7 @@ def produce_one(modbus_client):
     
                 # ====== 步骤2: 机械臂1搬运到转盘B ======
     print(">>> 步骤2: 机械臂1搬运到转盘B")
-    _mark_step("step1")
+    _mark_step("step1", 2)      # 步骤1 走完 → 开始步骤2
     stations_passed[1] = True          # 步骤1 走完 = 视觉检测工位通过
     _step_start = time.time()
     
@@ -823,7 +837,7 @@ def produce_one(modbus_client):
 
                 # ======步骤3： 点胶工位:机械臂2点胶 ======
     print(">>> 步骤3： 点胶工位:机械臂2点胶")
-    _mark_step("step2")
+    _mark_step("step2", 3)      # 步骤2 走完 → 开始步骤3
     stations_passed[2] = True          # 步骤2 走完 = 锁螺丝工位通过
     _step_start = time.time()  
     # 【节拍优化】已删除"点胶前"回零 —— 冗余动作
@@ -856,7 +870,7 @@ def produce_one(modbus_client):
 
                 # ====== 步骤4: 转盘B送料到皮带3（右视觉位） ======
     print(">>> 步骤4: 转盘B送料到皮带3")
-    _mark_step("step3")
+    _mark_step("step3", 4)      # 步骤3 走完 → 开始步骤4
     stations_passed[3] = True          # 步骤3 走完 = 点胶工位通过
     _step_start = time.time()
     # --- 4.1 转盘B 滚轮 + 皮带3，把料送到视觉1 ---
@@ -880,7 +894,7 @@ def produce_one(modbus_client):
 
                         # ====== 步骤5: 右侧视觉检测 ======
     print(">>> 步骤5: 视觉检测 (VISION_1)")
-    _mark_step("step4")
+    _mark_step("step4", 5)      # 步骤4 走完 → 开始步骤5
     _step_start = time.time()
    
     # ==========================================================================
@@ -935,7 +949,7 @@ def produce_one(modbus_client):
         is_ok = False
 
                 # ====== 步骤6: 返回结果 ======
-    _mark_step("step5")
+    _mark_step("step5")         # 本件结束 → 回到空闲
     stations_passed[4] = is_ok          # 工位4 的判定就是视觉结果
 
     return is_ok, step_times, stations_passed
@@ -1040,13 +1054,34 @@ def run_llm_line_leader(llm, event_manager, governance, modbus_client, station_s
         if adjustments:
             print(f"    调整: {adjustments}")
 
-        # 应用节拍调整
+        # 应用节拍调整（★ 2026-09-28 加了护栏）
         if "cycle_time" in adjustments:
-            new_cycle = float(adjustments["cycle_time"])
-            if 1.0 <= new_cycle <= 10.0:
-                PRODUCTION_CYCLE_TIME = new_cycle
-                event_manager.add_event("CYCLE_ADJUST", f"节拍调整为{new_cycle}秒")
-                print(f"    节拍已调整为 {new_cycle} 秒")
+            try:
+                want = float(adjustments["cycle_time"])
+            except (TypeError, ValueError):
+                want = None
+                print(f"    ★ LLM 给的 cycle_time 不是数字: {adjustments['cycle_time']!r}，忽略")
+
+            if want is not None:
+                # 护栏①：单次调整幅度限制（4B 模型有随机性，不能让它一步调飞）
+                delta = want - PRODUCTION_CYCLE_TIME
+                if abs(delta) > LLM_CYCLE_MAX_STEP:
+                    want = PRODUCTION_CYCLE_TIME + (
+                        LLM_CYCLE_MAX_STEP if delta > 0 else -LLM_CYCLE_MAX_STEP)
+                    print(f"    （LLM 想调到 {adjustments['cycle_time']}s，"
+                          f"超过单次上限 ±{LLM_CYCLE_MAX_STEP}s，已收敛到 {want:.1f}s）")
+                # 护栏②：硬夹到允许区间
+                want = max(LLM_CYCLE_MIN, min(LLM_CYCLE_MAX, want))
+
+                if abs(want - PRODUCTION_CYCLE_TIME) >= 0.1:   # 变化太小就不动
+                    old_c = PRODUCTION_CYCLE_TIME
+                    PRODUCTION_CYCLE_TIME = round(want, 1)
+                    event_manager.add_event(
+                        "CYCLE_ADJUST",
+                        f"节拍 {old_c}s → {PRODUCTION_CYCLE_TIME}s（LLM 决策）")
+                    print(f"    节拍已调整: {old_c}s → {PRODUCTION_CYCLE_TIME}s")
+                else:
+                    print(f"    LLM 建议 {want:.1f}s，与当前 {PRODUCTION_CYCLE_TIME}s 相差不大，不调整")
 
         # 更新仪表盘 LLM 决策
         decision_text = f"{assessment} → {', '.join(actions) if actions else '无操作'}"
@@ -1168,6 +1203,12 @@ start_time = time.time()
 # ========== 创建仪表盘窗口 ==========
 app = DashboardApp()
 
+# ★ 把事件流接到 GUI 日志栏（2026-09-28）
+#   event_manager.add_event() 产生的每条事件，除了打控制台，
+#   也会追加到仪表盘右下角的"事件日志"里。
+event_manager.sink = app.log
+app.log("系统启动 · 仪表盘就绪")
+
 
 # ========== 生产线程 ==========
 def production_loop():
@@ -1203,6 +1244,10 @@ def production_loop():
             #      stations_passed 各工位是否通过（更新统计用）
             last_result, step_times, stations_passed = produce_one(modbus_client)
             production_count += 1
+            try:
+                app.set_step(0)       # ★ 本件结束，仪表盘回到"空闲"
+            except Exception:
+                pass
 
             # 更新各工位统计（GUI 良率 / LLM 分析都读这里）
             for sid, passed in stations_passed.items():
@@ -1237,7 +1282,12 @@ def production_loop():
                 alarm=modbus_client.get_coil(ALARM_COIL),
                 cycle=cycle_count,
                 last_result=None,
+                cycle_time=cycle_elapsed,        # ★ 本件节拍（画趋势图）
+                params=_current_params(),        # ★ 当前关键参数一览
             )
+            # 记一条到 GUI 日志栏
+            app.log(f"第{production_count}件完成 | 节拍 {cycle_elapsed:.1f}s | "
+                    f"{'OK' if last_result else 'NG'}")
             # 节拍等待：每件之间固定歇一下。
             # ★ 这个值会被 LLM 改（所以调产线时要把 config.LLM_ENABLED 设为 False），
             #   默认值在 config.PRODUCTION_CYCLE_TIME（3.0 秒）
@@ -1359,6 +1409,26 @@ if ARM_POS_TRACE:
     pos_thread = threading.Thread(target=_arm_pos_sampler, args=(modbus_client,), daemon=True)
     pos_thread.start()
     print(f"位置采样已启动：每 {ARM_POS_POLL}s 一次 → {ARM_POS_TRACE_LOG}\n")
+
+def _current_params():
+    """★ 给 GUI"当前参数"栏用的关键参数一览（只读，方便一眼看到现在用的值）。
+
+    只列调产线时最常改的几个，不要列太多（面板放不下）。
+    """
+    return {
+        "节拍等待": f"{PRODUCTION_CYCLE_TIME}s",
+        "锁螺丝X": ARM1_X_TARGET,
+        "锁螺丝Z(接触/放料)": f"{ARM1_Z_CONTACT}/{ARM1_Z_WORK}",
+        "点胶X": ARM2_X_TARGET,
+        "点胶Z": ARM2_Z_WORK,
+        "回零前伸": f"{ARM_HOME_PRESTRETCH} ({ARM_HOME_SETTLE}s)",
+        "转盘A进料/停稳": f"{TABLE_A_LOAD_WAIT}/{TABLE_A_REST}s",
+        "皮带2走带": f"{BELT2_TRANSIT_WAIT}s",
+        "转盘B推料/稳定": f"{TABLE_B_PUSH_WAIT}/{TABLE_B_SETTLE}s",
+        "视觉等待": f"{VISION_WAIT_TIMEOUT}s",
+        "LLM": "已激活" if LLM_ENABLED else "已冻结",
+    }
+
 
 # ========== 启动生产线程 ==========
 prod_thread = threading.Thread(target=production_loop, daemon=True)

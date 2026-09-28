@@ -23,7 +23,8 @@ class DashboardApp:
         self.root = tk.Tk()
         self.root.title("3C 组装岛 · 实时监控")
 
-        self.root.geometry("960x740")
+        # ★ 窗口放大：右边加"步骤进度"栏，下面加"事件日志"栏
+        self.root.geometry("1256x900")
         self.root.resizable(False, False)
         self.root.configure(bg="#0a0a0f")
 
@@ -41,6 +42,38 @@ class DashboardApp:
             "llm_decision": "等待分析...",
         }
 
+        # ★★★ 线程安全的更新队列（2026-09-28 修）★★★
+        #  为什么必须有这个：
+        #    Tkinter 【不允许从其他线程操作控件】，连 root.after() 都不行 ——
+        #    非主线程调用 after() 会抛 "main thread is not in main loop"，
+        #    表现就是【界面完全不刷新】。
+        #  而我们的调用方恰恰都是别的线程：
+        #    生产线程 main.py → app.update_data / app.set_step
+        #    LLM 线程        → app.update_data
+        #    event_manager   → app.log
+        #  所以改成：其他线程只往队列里塞数据，主线程的 _tick 定时取出来刷界面。
+        import queue as _queue
+        self._q = _queue.Queue(maxsize=2000)
+
+        # 下面这些【只由主线程读写】，其他线程不许直接碰
+        self._pending_step = None     # 待处理的步骤号
+        self._pending_logs = []       # 待追加的日志行
+
+        # ★ 当前步骤 + 步骤本身耗时
+        self._cur_step = 0            # 0 = 空闲；1~5 = 正在做第几步
+        self._cur_step_t0 = time.time()
+        self._last_step_time = 0.0    # 上一步用了多久
+
+        # ★ 事件日志行（最多保留 MAX_LOG 条，滚动显示）
+        self._log_lines = []
+        self.MAX_LOG = 200
+
+        # ★ 节拍历史（最近 20 件），用来画迷你趋势
+        self._cycle_history = []
+
+        # 定时刷新（步骤耗时是连续走的，需要自己走时钟，不能只靠 update_data）
+        self.root.after(200, self._tick)
+
     # ---------- 构建 UI ----------
 
     def _build_ui(self):
@@ -57,15 +90,20 @@ class DashboardApp:
             fg="#ff6600",
         ).pack(pady=10)
 
-        # 轮盘画布区域
+        # ========== 中部：左边画布 + 右边步骤进度栏 ==========
+        mid = tk.Frame(root, bg="#0a0a0f")
+        mid.pack(fill="x")
 
-        self.canvas = tk.Canvas(root, width=960, height=540, bg="#0a0a0f", highlightthickness=0)
-        self.canvas.pack()
+        self.canvas = tk.Canvas(mid, width=960, height=540, bg="#0a0a0f",
+                                highlightthickness=0)
+        self.canvas.pack(side="left")
+
+        self._build_step_panel(mid)
 
         # 绘制轮盘静态元素
         self._draw_rotary_table()
 
-        # 底部信息栏
+        # ========== 底部信息栏 ==========
         info_frame = tk.Frame(root, bg="#1a0a00", height=140)
         info_frame.pack(fill="x", side="bottom")
 
@@ -97,7 +135,230 @@ class DashboardApp:
             info_frame, text="AI线长: 等待分析...", font=("微软雅黑", 10),
             bg="#1a0a00", fg="#ff6600", anchor="w"
         )
-        self.llm_decision_label.grid(row=2, column=0, columnspan=5, sticky="ew", padx=20, pady=(0, 8))
+        self.llm_decision_label.grid(row=2, column=0, columnspan=5, sticky="ew", padx=20, pady=(0, 4))
+
+        # ★ 让 5 列均匀分配宽度，日志栏才能真正铺满（不然只跨到用过的列宽）
+        for _c in range(5):
+            info_frame.grid_columnconfigure(_c, weight=1)
+
+        # ★ 事件日志栏（最下面）
+        self._build_log_panel(info_frame)
+
+    # ---------- 右侧：生产步骤进度栏 ----------
+
+    # ★ 步骤清单（和 main.py produce_one 里的 5 步一一对应）
+    STEP_NAMES = [
+        "1 转盘A 接料送料",
+        "2 锁螺丝臂 搬运",
+        "3 点胶臂 点胶",
+        "4 转盘B 送料",
+        "5 视觉检测分拣",
+    ]
+
+    def _build_step_panel(self, parent):
+        """右边那一栏：当前走到第几步、每步耗时、节拍趋势、事件日志"""
+        p = tk.Frame(parent, bg="#0a0a0f", width=280)
+        p.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        p.pack_propagate(False)
+
+        # ---- 标题 ----
+        tk.Label(p, text="生产步骤", font=("微软雅黑", 11, "bold"),
+                 bg="#0a0a0f", fg="#ff6600").pack(anchor="w", pady=(4, 6))
+
+        # ---- 5 个步骤行：圆点 + 名称 + 本步耗时 ----
+        self.step_rows = []
+        for i, nm in enumerate(self.STEP_NAMES):
+            row = tk.Frame(p, bg="#0a0a0f")
+            row.pack(fill="x", pady=2)
+            dot = tk.Label(row, text="●", font=("微软雅黑", 11),
+                           bg="#0a0a0f", fg="#333340")
+            dot.pack(side="left")
+            tk.Label(row, text=nm, font=("微软雅黑", 9), bg="#0a0a0f",
+                     fg="#a0a0a0", anchor="w").pack(side="left", padx=(4, 0))
+            t = tk.Label(row, text="", font=("Consolas", 9), bg="#0a0a0f",
+                         fg="#ff6600", width=7, anchor="e")
+            t.pack(side="right")
+            self.step_rows.append({"dot": dot, "time": t})
+
+        # ---- 当前步骤大数字 ----
+        box = tk.Frame(p, bg="#1a0a00")
+        box.pack(fill="x", pady=(10, 4))
+        tk.Label(box, text="当前", font=("微软雅黑", 8), bg="#1a0a00",
+                 fg="#a0a0a0").pack(anchor="w", padx=8, pady=(4, 0))
+        self.step_now = tk.Label(box, text="空闲", font=("微软雅黑", 12, "bold"),
+                                 bg="#1a0a00", fg="#ff6600")
+        self.step_now.pack(anchor="w", padx=8)
+        self.step_clock = tk.Label(box, text="已用 0.0s", font=("Consolas", 10),
+                                   bg="#1a0a00", fg="#a0a0a0")
+        self.step_clock.pack(anchor="w", padx=8, pady=(0, 6))
+
+        # ---- 节拍信息 ----
+        tk.Label(p, text="节拍", font=("微软雅黑", 11, "bold"),
+                 bg="#0a0a0f", fg="#ff6600").pack(anchor="w", pady=(10, 4))
+        self.cycle_info = tk.Label(p, text="本件: --s   上件: --s",
+                                   font=("Consolas", 9), bg="#0a0a0f",
+                                   fg="#a0a0a0", anchor="w", justify="left")
+        self.cycle_info.pack(anchor="w")
+        self.cycle_mini = tk.Canvas(p, width=250, height=56, bg="#0a0a0f",
+                                    highlightthickness=1,
+                                    highlightbackground="#333340")
+        self.cycle_mini.pack(anchor="w", pady=4)
+        self.cycle_best = tk.Label(p, text="最快: --s   平均: --s",
+                                   font=("Consolas", 9), bg="#0a0a0f",
+                                   fg="#a0a0a0", anchor="w")
+        self.cycle_best.pack(anchor="w")
+
+        # ---- 参数一览（只读，方便一眼看到当前用的值）----
+        tk.Label(p, text="当前参数", font=("微软雅黑", 11, "bold"),
+                 bg="#0a0a0f", fg="#ff6600").pack(anchor="w", pady=(10, 4))
+        self.param_label = tk.Label(p, text="等待 config...", font=("Consolas", 8),
+                                    bg="#0a0a0f", fg="#a0a0a0",
+                                    anchor="w", justify="left")
+        self.param_label.pack(anchor="w")
+
+    # ---------- 事件日志栏（横跨底部）----------
+
+    def _build_log_panel(self, parent):
+        """底部日志：显示最近的事件，滚动保留"""
+        tk.Label(parent, text="事件日志", font=("微软雅黑", 9, "bold"),
+                 bg="#1a0a00", fg="#ff6600").grid(
+            row=3, column=0, columnspan=5, sticky="w", padx=20, pady=(6, 0))
+        self.log_text = tk.Text(parent, height=5, bg="#0d0d14", fg="#c0c0c0",
+                                font=("Consolas", 8), bd=0,
+                                highlightthickness=1,
+                                highlightbackground="#333340",
+                                state="disabled", wrap="none")
+        self.log_text.grid(row=4, column=0, columnspan=5, sticky="ew",
+                           padx=20, pady=(2, 10))
+
+    def log(self, msg):
+        """往日志里追加一行。【可从任意线程调用】
+
+        ★ 注意：这里【不能】直接改 _log_lines，也不能调 root.after()，
+          因为 Tkinter 不允许其他线程碰它。只往队列里塞，主线程去取。
+        """
+        self._safe_put(("log", msg))
+
+    def _refresh_log(self):
+        self.log_text.config(state="normal")
+        self.log_text.delete("1.0", "end")
+        # 只显示最后 8 行（面板就这么高）
+        for line in self._log_lines[-8:]:
+            self.log_text.insert("end", line + "\n")
+        self.log_text.see("end")
+        self.log_text.config(state="disabled")
+
+    # ---------- 步骤/节拍 刷新 ----------
+
+    def set_step(self, step_no):
+        """main.py 每进入一个步骤调用一次。step_no: 1~5；0 = 空闲
+
+        【可从任意线程调用】—— 只记到队列，主线程 _tick 里真正切换。
+        """
+        self._safe_put(("step", step_no))
+
+    # ---------- 线程间通信 ----------
+
+    def _safe_put(self, item):
+        """把一条更新塞进队列。【任意线程都可调用，不会碰 Tk】"""
+        try:
+            self._q.put_nowait(item)
+        except Exception:
+            pass          # 队列满/关了都无所谓，界面丢一帧不影响生产
+
+    def _drain_queue(self):
+        """★ 只由主线程调用：把队列里的更新全部取出来应用到界面。"""
+        got_step = None
+        got_data = None
+        got_logs = []
+        while True:
+            try:
+                kind, payload = self._q.get_nowait()
+            except Exception:
+                break
+            if kind == "step":
+                got_step = payload          # 只保留最后一个（中间的没必要逐帧走）
+            elif kind == "data":
+                got_data = payload          # 同上，界面只要最新状态
+            elif kind == "log":
+                got_logs.append(payload)    # 日志不能丢，全留着
+
+        # ---- 应用步骤切换 ----
+        if got_step is not None:
+            now = time.time()
+            if self._cur_step != 0:
+                self._last_step_time = now - self._cur_step_t0
+                row = self.step_rows[self._cur_step - 1]
+                row["time"].config(text=f"{self._last_step_time:.1f}s")
+            self._cur_step = got_step
+            self._cur_step_t0 = now
+
+        # ---- 应用日志 ----
+        if got_logs:
+            for m in got_logs:
+                ts = time.strftime("%H:%M:%S")
+                self._log_lines.append(f"[{ts}] {m}")
+            if len(self._log_lines) > self.MAX_LOG:
+                self._log_lines = self._log_lines[-self.MAX_LOG:]
+            self._refresh_log()
+
+        # ---- 应用数据 ----
+        if got_data is not None:
+            self._apply_data(got_data)
+            self._refresh_ui()
+
+    def _tick(self):
+        """★ 只在主线程跑。每 200ms：消费队列 + 刷新"当前步骤已用时间"。"""
+        try:
+            self._drain_queue()
+            self._refresh_steps()
+        except Exception as e:
+            print("      [GUI] 刷新出错（不影响生产）:", e)
+        self.root.after(200, self._tick)
+
+    def _refresh_steps(self):
+        for i, row in enumerate(self.step_rows):
+            if self._cur_step == i + 1:
+                row["dot"].config(fg="#ff6600")       # 正在做的：亮橙
+            elif self._cur_step > i + 1:
+                row["dot"].config(fg="#44ff44")       # 已做完的：绿
+            else:
+                row["dot"].config(fg="#333340")       # 未开始的：暗
+        if self._cur_step == 0:
+            self.step_now.config(text="空闲", fg="#a0a0a0")
+            self.step_clock.config(text="")
+        else:
+            self.step_now.config(text=self.STEP_NAMES[self._cur_step - 1],
+                                 fg="#ff6600")
+            used = time.time() - self._cur_step_t0
+            self.step_clock.config(text=f"已用 {used:.1f}s")
+
+    def _draw_cycle_mini(self):
+        """画节拍迷你趋势图（最近 20 件）"""
+        c = self.cycle_mini
+        c.delete("all")
+        w, h = 250, 56
+        c.create_line(0, h - 1, w, h - 1, fill="#333340")
+        hist = self._cycle_history[-20:]
+        if not hist:
+            c.create_text(w // 2, h // 2, text="暂无数据",
+                          font=("微软雅黑", 8), fill="#555560")
+            return
+        lo, hi = min(hist), max(hist)
+        span = max(hi - lo, 1.0)
+        n = len(hist)
+        bw = max(2, (w - 10) // max(n, 1) - 2)
+        for i, v in enumerate(hist):
+            bh = int((v - lo) / span * (h - 14)) + 4
+            x0 = 5 + i * (bw + 2)
+            y0 = h - 3 - bh
+            # 最后一件用亮橙，其余用暗橙
+            col = "#ff6600" if i == n - 1 else "#7a3a00"
+            c.create_rectangle(x0, y0, x0 + bw, h - 3, fill=col, outline="")
+        c.create_text(2, 8, text=f"{hi:.0f}s", font=("Consolas", 7),
+                      fill="#a0a0a0", anchor="w")
+        c.create_text(2, h - 10, text=f"{lo:.0f}s", font=("Consolas", 7),
+                      fill="#a0a0a0", anchor="w")
 
     def _draw_rotary_table(self):
         c = self.canvas
@@ -257,12 +518,20 @@ class DashboardApp:
 
     # ---------- 更新数据 ----------
 
-    def update_data(self, production_count, target, station_stats, llm_status, ai_score, alarm, cycle, last_result=None, llm_decision=None):
-        """更新仪表盘数据（可从其他线程调用）
-        last_result: True=OK, False=NG, None=无产品
-        llm_decision: AI线长最新决策文本
+    def update_data(self, production_count, target, station_stats, llm_status,
+                    ai_score, alarm, cycle, last_result=None, llm_decision=None,
+                    cycle_time=None, params=None):
+        """更新仪表盘数据。【可从任意线程调用】
+
+        last_result:   True=OK, False=NG, None=无产品
+        llm_decision:  AI线长最新决策文本
+        cycle_time:    ★ 本件实际节拍（秒）。给了就记进节拍趋势图
+        params:        ★ 当前关键参数 dict，显示在"当前参数"栏
+
+        ★ 实现说明：这里【不直接碰控件】，只把数据打包塞进队列，
+          由主线程的 _tick 取出来应用。原因见 __init__ 里 _q 的注释。
         """
-        self._data = {
+        self._safe_put(("data", {
             "production_count": production_count,
             "target": target,
             "station_stats": station_stats,
@@ -271,11 +540,32 @@ class DashboardApp:
             "alarm": alarm,
             "cycle": cycle,
             "last_result": last_result,
+            "llm_decision": llm_decision,
+            "cycle_time": cycle_time,
+            "params": params,
+        }))
+
+    def _apply_data(self, d):
+        """★ 只由主线程调用：把队列里取出的数据应用到内部状态。"""
+        old_decision = self._data.get("llm_decision")
+        old_params = self._data.get("params")
+        self._data = {
+            "production_count": d["production_count"],
+            "target": d["target"],
+            "station_stats": d["station_stats"],
+            "llm_status": d["llm_status"],
+            "ai_score": d["ai_score"],
+            "alarm": d["alarm"],
+            "cycle": d["cycle"],
+            "last_result": d["last_result"],
+            "llm_decision": d["llm_decision"] if d["llm_decision"] is not None else old_decision,
+            "params": d["params"] if d["params"] is not None else old_params,
         }
-        if llm_decision is not None:
-            self._data["llm_decision"] = llm_decision
-        # 调度到主线程更新 UI
-        self.root.after(0, self._refresh_ui)
+        # ★ 记录节拍历史（给趋势图用）
+        if d["cycle_time"] is not None:
+            self._cycle_history.append(float(d["cycle_time"]))
+            if len(self._cycle_history) > self.MAX_LOG:
+                self._cycle_history = self._cycle_history[-self.MAX_LOG:]
 
     def _refresh_ui(self):
         d = self._data
@@ -293,6 +583,23 @@ class DashboardApp:
 
         # LLM 决策
         self.llm_decision_label.config(text=f"AI线长: {d.get('llm_decision', '监管中...')}")
+
+        # ★ 节拍信息 + 趋势图
+        hist = self._cycle_history
+        if hist:
+            cur = hist[-1]
+            prev = hist[-2] if len(hist) >= 2 else None
+            self.cycle_info.config(
+                text=f"本件: {cur:.1f}s   上件: {('--' if prev is None else f'{prev:.1f}s')}")
+            self.cycle_best.config(
+                text=f"最快: {min(hist):.1f}s   平均: {sum(hist)/len(hist):.1f}s")
+            self._draw_cycle_mini()
+
+        # ★ 参数一览
+        p = d.get("params")
+        if p:
+            self.param_label.config(
+                text="\n".join(f"{k}: {v}" for k, v in p.items()))
 
         # 工位方块
         last_result = d.get("last_result")

@@ -166,6 +166,17 @@ class FactoryModbusClient:
     def __init__(self, host, port):
         # 建对象时就根据 PROTOCOL 把后端造好（但还没连接）
         self._backend = _build_backend(host, port)
+        # ★★★ 线程锁（2026-09-28 激活 LLM 时加的）★★★
+        #  为什么必须加：
+        #    pymodbus 的客户端【不是线程安全的】。同时有两个以上线程
+        #    读写同一个 TCP 连接，会出现"请求/响应错位"——
+        #    读到别人的返回值，甚至整条连接崩掉。
+        #  现在有几个线程在碰它：
+        #    生产线程 produce_one（主要）、LLM 线程、位置采样线程
+        #  用 RLock（可重入）而不是 Lock：万一某个方法内部又调了另一个
+        #  被锁的方法，可重入锁不会自己把自己锁死。
+        import threading as _th
+        self._lock = _th.RLock()
 
     # ------------------------------------------------------------------
     #  以下 5 个是"标准接口"，真实 Modbus 和虚拟 PLC 都支持
@@ -180,7 +191,8 @@ class FactoryModbusClient:
 
         ⚠ 通信出错也返回 False，跟"读到 0"无法区分（见后端里的说明）。
         """
-        return self._backend.read_input(address)
+        with self._lock:
+            return self._backend.read_input(address)
 
     def read_inputs(self, start, count):
         """★ 批量读离散输入，返回 list[bool]；后端不支持或读失败返回 None。
@@ -188,20 +200,23 @@ class FactoryModbusClient:
         用途：需要高频采样多个输入时（比如抓"料经过传感器的那一刻"），
         一次往返就够，不用一个点一个点地读。
         """
-        if hasattr(self._backend, "read_inputs"):
-            return self._backend.read_inputs(start, count)
+        with self._lock:
+            if hasattr(self._backend, "read_inputs"):
+                return self._backend.read_inputs(start, count)
         return None
 
     def write_coil(self, address, value):
         """写一个输出位（开/关某个设备）。value 传 True 或 False。"""
-        self._backend.write_coil(address, value)
+        with self._lock:
+            self._backend.write_coil(address, value)
 
     def write_register(self, address, value):
         """写一个模拟量寄存器（机械臂位置）。value 传 0~10000。
 
         int(value) 是保险：万一上层传了浮点数，这里转成整数再发。
         """
-        self._backend.write_register(address, int(value))
+        with self._lock:
+            self._backend.write_register(address, int(value))
 
     def read_input_register(self, address):
         """读一个【输入寄存器】（Input Register，3x）——机械臂的实际位置。
@@ -214,8 +229,9 @@ class FactoryModbusClient:
         ★ 这是唯一能拿到"机械臂实际在哪"的通道。
           用之前先拿 test_read_position.py 确认编号。
         """
-        if hasattr(self._backend, "read_input_register"):
-            return self._backend.read_input_register(address)
+        with self._lock:
+            if hasattr(self._backend, "read_input_register"):
+                return self._backend.read_input_register(address)
         return None
 
     def read_register(self, address):
@@ -228,13 +244,15 @@ class FactoryModbusClient:
 
         ★ 有了它就能回答"TRACE 说写了 500，寄存器里到底是不是 500"。
         """
-        if hasattr(self._backend, "read_register"):
-            return self._backend.read_register(address)
+        with self._lock:
+            if hasattr(self._backend, "read_register"):
+                return self._backend.read_register(address)
         return None
 
     def close(self):
         """断开连接。程序退出前调用。"""
-        self._backend.close()
+        with self._lock:
+            self._backend.close()
 
     # ------------------------------------------------------------------
     #  以下方法只有"虚拟模式(virtual)"才真正有效
@@ -248,13 +266,15 @@ class FactoryModbusClient:
         用途：写测试脚本时模拟"限位到了"、"视觉看到料了"，
         不用真的等现场硬件动作。
         """
-        if hasattr(self._backend, "set_input"):
-            self._backend.set_input(address, value)
+        with self._lock:
+            if hasattr(self._backend, "set_input"):
+                self._backend.set_input(address, value)
 
     def set_inputs(self, **kwargs):
         """【仅虚拟模式】一次设置多个输入位。用法：mc.set_inputs(a=True, b=False)"""
-        if hasattr(self._backend, "set_inputs"):
-            self._backend.set_inputs(**kwargs)
+        with self._lock:
+            if hasattr(self._backend, "set_inputs"):
+                self._backend.set_inputs(**kwargs)
 
     def get_coil(self, address: int) -> bool:
         """读一个输出线圈的当前状态。
@@ -263,22 +283,26 @@ class FactoryModbusClient:
           已知影响：main.py 用它来显示报警状态，所以真机上报警灯显示永远"正常"。
           要修就得在后端里实现线圈回读（pymodbus 的 read_coils）。
         """
-        if hasattr(self._backend, "get_coil"):
-            return self._backend.get_coil(address)
+        with self._lock:
+            if hasattr(self._backend, "get_coil"):
+                return self._backend.get_coil(address)
         return False
 
     def get_register(self, address: int) -> int:
         """读一个模拟量寄存器的值。【仅虚拟模式有效】，真机返回 0。"""
-        if hasattr(self._backend, "get_register"):
-            return self._backend.get_register(address)
+        with self._lock:
+            if hasattr(self._backend, "get_register"):
+                return self._backend.get_register(address)
         return 0
 
     def print_history(self, last_n=None):
         """【仅虚拟模式】打印操作历史，调试时序时很有用。"""
-        if hasattr(self._backend, "print_history"):
-            self._backend.print_history(last_n)
+        with self._lock:
+            if hasattr(self._backend, "print_history"):
+                self._backend.print_history(last_n)
 
     def clear_history(self):
         """【仅虚拟模式】清空操作历史。"""
-        if hasattr(self._backend, "clear_history"):
-            self._backend.clear_history()
+        with self._lock:
+            if hasattr(self._backend, "clear_history"):
+                self._backend.clear_history()
