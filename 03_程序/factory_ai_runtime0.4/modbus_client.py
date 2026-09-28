@@ -68,6 +68,23 @@ def _build_backend(host: str, port: int):
                         return False
                     return result.bits[0]        # 取第 0 位，就是 True/False
 
+                def read_inputs(self, start, count):
+                    """★ 批量读离散输入（一次 Modbus 往返拿回多个位）。
+
+                    为什么要这个：一个一个读的话，读 13 个点就要 13 次往返，
+                    几百毫秒才能轮一圈 —— 料经过传感器的瞬间会整个漏掉。
+                    批量读只要 1 次往返，采样周期能压到十几毫秒。
+
+                    返回 list[bool]；失败返回 None。
+                    """
+                    try:
+                        result = client.read_discrete_inputs(start, count=count)
+                        if result is None or (hasattr(result, "isError") and result.isError()):
+                            return None
+                        return [bool(b) for b in result.bits[:count]]
+                    except Exception:
+                        return None
+
                 def write_coil(self, address, value):
                     # 写线圈（Coil，0x 区）——对应 Factory IO 的输出点。
                     # 开皮带、点转盘、吸嘴、推杆都走这里
@@ -164,6 +181,16 @@ class FactoryModbusClient:
         ⚠ 通信出错也返回 False，跟"读到 0"无法区分（见后端里的说明）。
         """
         return self._backend.read_input(address)
+
+    def read_inputs(self, start, count):
+        """★ 批量读离散输入，返回 list[bool]；后端不支持或读失败返回 None。
+
+        用途：需要高频采样多个输入时（比如抓"料经过传感器的那一刻"），
+        一次往返就够，不用一个点一个点地读。
+        """
+        if hasattr(self._backend, "read_inputs"):
+            return self._backend.read_inputs(start, count)
+        return None
 
     def write_coil(self, address, value):
         """写一个输出位（开/关某个设备）。value 传 True 或 False。"""

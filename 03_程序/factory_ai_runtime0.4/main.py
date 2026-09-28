@@ -522,10 +522,13 @@ def _arm_home(modbus_client, x_reg, z_reg, x_moving=None, z_moving=None,
             _arm_trace(f"回读 reg{_r} 失败（读不到或后端不支持）")
 
     # ★ 校验②：响应 —— 写完之后这个轴的 Moving 信号有没有抬起来？
-    #   ARM_MOVE_DEBUG 打开时才做，避免每次都多花时间。
-    #   信号抬起  = 机械臂确实动了（但走多远读不到，只能靠眼睛）
-    #   信号没抬  = 机械臂纹丝没动  → 这才是真正的"假的 500"
-    if ARM_MOVE_DEBUG:
+    #
+    #  ★★ 2026-09-28 节拍优化：这一段【默认关闭】（ARM_HOME_RESP_PROBE = False）。
+    #     它每次调用要等 ARM_WAKE_TIME + 0.3 ≈ 0.7 秒，一个周期调 6 次 = 白花 4.2 秒。
+    #     当初加它是为了排查"前伸 500 到底动没动"，那个问题已经查清了
+    #     （标定确认：写 500 位置确实到 499）。
+    #     以后要是怀疑"机械臂没响应"，把 config.ARM_HOME_RESP_PROBE 设回 True 即可。
+    if ARM_HOME_RESP_PROBE:
         for _reg, _mv, _nm in ((x_reg, x_moving, "X"), (z_reg, z_moving, "Z")):
             if _mv is None:
                 continue
@@ -580,6 +583,60 @@ def _table_wait_limit(modbus_client, addr, target, timeout=8.0, what=""):
         return True
     print(f"      [table] 限位未到位: {what} (input {addr} != {target})")
     return False
+
+
+def _arm_home_both(modbus_client, tag="初始化双臂"):
+    """★ 两个臂【同时】回原点（节拍优化 2026-09-28）
+
+    为什么做这个：
+        原来两个臂是【串行】回零：臂2 走完 3.4s，再轮到臂0 走 3.4s，合计约 6.8s。
+        但两个臂是两个【独立】的执行机构，各有一套寄存器和 Moving 信号，
+        完全可以同时下发命令、并行等待 —— 时间直接减半。
+
+    动作序列（和 _arm_home 完全一样，只是两个臂一起做）：
+        0. 两臂 X/Z 全部写 0，等 SETTLE
+        1. 两臂 X/Z 全部写 500（前伸唤醒）
+        2. 保持 PRESTRETCH_HOLD
+        3. 两臂 X/Z 全部写 0，等 SETTLE
+
+    ★ 注意：SETTLE 仍然是 1.9s（不是 0.95s）。因为它是"等机械动作完成"的
+      绝对时间，两臂并行时各自都需要这么久，不会因为并行而变快。
+      省下的是"第二个臂的那一整套 SETTLE + HOLD"。
+
+    ⚠ 如果以后发现"两臂同时动时有一个走不到位"（比如电流不够/机械打架），
+      把调用处换回两次 _arm_home 串行即可（注释里保留了写法）。
+    """
+    _arm_trace(f"=== 双臂同时回零 [{tag}] 开始 ===")
+    _arm_trace(f"    臂2 起始: {_arm_pos(modbus_client, ('P2_X', 'P2_Z'))}   "
+               f"臂0 起始: {_arm_pos(modbus_client, ('P0_X', 'P0_Z'))}")
+
+    _t0 = time.time()
+    # --- 第0步：两臂都清残留到 0 ---
+    for _r in (ARM1_X_REG, ARM1_Z_REG, ARM2_X_REG, ARM2_Z_REG):
+        modbus_client.write_register(_r, 0)
+        _ARM_CMD[_r] = 0
+    time.sleep(ARM_HOME_SETTLE)
+
+    # --- 第1步：两臂同时轻微前伸/下探（唤醒机构）---
+    for _r in (ARM1_X_REG, ARM1_Z_REG, ARM2_X_REG, ARM2_Z_REG):
+        modbus_client.write_register(_r, ARM_HOME_PRESTRETCH)
+        _ARM_CMD[_r] = ARM_HOME_PRESTRETCH
+    _arm_trace(f"    双臂前伸 {ARM_HOME_PRESTRETCH}（唤醒）")
+
+    # --- 第2步：保持，让机构真的动起来 ---
+    time.sleep(ARM_HOME_PRESTRETCH_HOLD)
+
+    # --- 第3步：两臂同时归零 ---
+    for _r in (ARM1_X_REG, ARM1_Z_REG, ARM2_X_REG, ARM2_Z_REG):
+        modbus_client.write_register(_r, 0)
+        _ARM_CMD[_r] = 0
+    time.sleep(ARM_HOME_SETTLE)
+
+    _used = time.time() - _t0
+    _arm_trace(f"    臂2 结束: {_arm_pos(modbus_client, ('P2_X', 'P2_Z'))}   "
+               f"臂0 结束: {_arm_pos(modbus_client, ('P0_X', 'P0_Z'))}")
+    _arm_trace(f"=== 双臂同时回零 [{tag}] 完成，用时 {_used:.2f}s "
+               f"（串行约需 2 倍）===")
 
 
 def _table_pulse(modbus_client, turn_coil, limit_addr, timeout=8.0, what=""):
@@ -674,15 +731,15 @@ def produce_one(modbus_client):
     # ==========================================================================
     print(">>> 步骤1: 转盘A转90°接料 → 回0° → 送料到皮带2")
     _step_start = time.time()         # ★ 重置计时起点，本步耗时从这里算
-    # ★ 两个臂的初始化回零（周期开始各做一次）
-    _arm_trace(f"=== 锁螺丝臂初始化前 · 实际位置: {_arm_pos(modbus_client, ('P2_X', 'P2_Z'))} ===")
-    _arm_home(modbus_client, ARM1_X_REG, ARM1_Z_REG,
-              ARM2_MOVING_X_INPUT, ARM2_MOVING_Z_INPUT, tag="初始化机械臂2")
-    _arm_trace(f"=== 锁螺丝臂初始化后 · 实际位置: {_arm_pos(modbus_client, ('P2_X', 'P2_Z'))} ===")
-    _arm_trace(f"=== 点胶臂初始化前 · 实际位置: {_arm_pos(modbus_client, ('P0_X', 'P0_Z'))} ===")
-    _arm_home(modbus_client, ARM2_X_REG, ARM2_Z_REG,
-              ARM0_MOVING_X_INPUT, ARM0_MOVING_Z_INPUT, tag="初始化机械臂0")
-    _arm_trace(f"=== 点胶臂初始化后 · 实际位置: {_arm_pos(modbus_client, ('P0_X', 'P0_Z'))} ===")
+    # ★ 两个臂【同时】初始化回零（节拍优化：原来串行约 6.8s，并行约 3.4s）
+    #   两臂是独立的执行机构，互不干涉，可以同时下发命令、并行等待。
+    _arm_home_both(modbus_client, tag="初始化双臂")
+    # 如果以后发现"两臂同时动会互相影响"（走不到位/打架），
+    # 就把上面一行换成下面这个串行版本：
+    # _arm_home(modbus_client, ARM1_X_REG, ARM1_Z_REG,
+    #           ARM2_MOVING_X_INPUT, ARM2_MOVING_Z_INPUT, tag="初始化机械臂2")
+    # _arm_home(modbus_client, ARM2_X_REG, ARM2_Z_REG,
+    #           ARM0_MOVING_X_INPUT, ARM0_MOVING_Z_INPUT, tag="初始化机械臂0")
     
 
     # --- 1.1 转盘A 转到 90°（接料位），★ 到位后【保持不放】---
@@ -711,7 +768,7 @@ def produce_one(modbus_client):
     modbus_client.write_coil(BELT_0_COIL, False)           # 停皮带0
     modbus_client.write_coil(EMITTER_COIL, False)          # 停发料
     # ★ 料刚进中心还有惯性，要停稳再转盘，否则转的时候料会偏、蹭到盘边
-    time.sleep(1.0)
+    time.sleep(TABLE_A_REST)
 
     # --- 1.4 转盘A 回 0°（送料位）---
     # ★ 这里不用再"点一下转 0°"：只要把线圈松开（写 False），转盘自己就会回 0°。
@@ -722,14 +779,13 @@ def produce_one(modbus_client):
     # --- 1.5 转盘滚轮 + 皮带2，把料送到机械臂2 工位 ---
     modbus_client.write_coil(TABLE_A_ROLL_P_COIL, True)    # 转盘A 滚轮正转（把料推出去）
     modbus_client.write_coil(BELT_2_COIL, True)            # 皮带机2（送到锁螺丝工位）
-    # 等待料到位，判据是漫反射传感器（接在 ARM1_DETECT_INPUT = input6）
-    # ★ 机械臂自带的 Item Detected 没接线，现场用漫反射替代
-    if not _wait_input(modbus_client, ARM1_DETECT_INPUT, True, timeout=5.0):
-        # 漫反射 5 秒内没检测到 → 走保底。这个 1.5s 是"没到位也硬等"
-        time.sleep(1.5)
+    # 【2026-09-28】已删除"等漫反射传感器"—— 现场确认那个传感器是假的，
+    #   原来只会白等 5 秒（再 +1.5 秒保底）。现在改成固定走带时间。
+    #   ★ 值来自现场实测：发料 → 料撞挡板 共 14 秒（路径见 config 注释）。
+    time.sleep(BELT2_TRANSIT_WAIT)
     modbus_client.write_coil(TABLE_A_ROLL_P_COIL, False)   # 停滚轮
     modbus_client.write_coil(BELT_2_COIL, False)           # 停皮带2
-    time.sleep(0.3)                                        # 收尾稳定
+    time.sleep(BELT2_STOP_SETTLE)                          # 收尾稳定
 
     
                 # ====== 步骤2: 机械臂1搬运到转盘B ======
@@ -738,9 +794,14 @@ def produce_one(modbus_client):
     stations_passed[1] = True          # 步骤1 走完 = 视觉检测工位通过
     _step_start = time.time()
     
-    # ===== 机械臂2（锁螺丝位）回零 =====
-    _arm_home(modbus_client, ARM1_X_REG, ARM1_Z_REG,
-              ARM2_MOVING_X_INPUT, ARM2_MOVING_Z_INPUT, tag="取料前")
+    # 【节拍优化】已删除"取料前"回零 —— 冗余动作
+    #   理由：步骤1 开头刚做过"初始化机械臂2"回零，之后这个臂【一次都没动过】
+    #         （中间只有转盘A 和皮带在动作）。臂本来就在 0，再回一次零：
+    #           · 白花 4.8 秒
+    #           · 而且 _arm_home 会把臂推到 500 再回 0 —— 等于把已归零的臂又动一遍
+    #   如果以后发现"取料时位置不对"，把下面两行取消注释即可恢复：
+    # _arm_home(modbus_client, ARM1_X_REG, ARM1_Z_REG,
+    #           ARM2_MOVING_X_INPUT, ARM2_MOVING_Z_INPUT, tag="取料前")
 
     # ===== 机械臂2 取料 =====
     modbus_client.write_coil(ARM1_GRAB_COIL, True)                     # 先开吸嘴
@@ -765,9 +826,12 @@ def produce_one(modbus_client):
     _mark_step("step2")
     stations_passed[2] = True          # 步骤2 走完 = 锁螺丝工位通过
     _step_start = time.time()  
-    # ===== 机械臂0（点胶位）回零 =====
-    _arm_home(modbus_client, ARM2_X_REG, ARM2_Z_REG,
-              ARM0_MOVING_X_INPUT, ARM0_MOVING_Z_INPUT, tag="点胶前")
+    # 【节拍优化】已删除"点胶前"回零 —— 冗余动作
+    #   理由同"取料前"：步骤1 开头刚做过"初始化机械臂0"回零，
+    #   之后这个臂一次都没动过，本来就在 0，再回一次白花 4.8 秒。
+    #   要恢复就把下面两行取消注释：
+    # _arm_home(modbus_client, ARM2_X_REG, ARM2_Z_REG,
+    #           ARM0_MOVING_X_INPUT, ARM0_MOVING_Z_INPUT, tag="点胶前")
 
     # ===== 机械臂0 点胶 =====
     # ★ 点胶臂只需要简单的两个动作，不要照搬锁螺丝臂的"两段 Z"：
