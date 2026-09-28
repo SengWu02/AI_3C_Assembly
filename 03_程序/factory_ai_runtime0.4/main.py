@@ -952,17 +952,32 @@ def produce_one(modbus_client):
     last_val = None
     _val_changes = 0      # 电平变化次数（用来判断"到底有没有料经过"）
     start = time.time()   # ★ 等待窗口的起点（原来这行被注释块盖掉了，会 NameError）
-    # ★ 皮带3 的运行上限（从步骤4 开算）。到点无论有没有结果都要停，
-    #   否则料会一路冲过推杆位置，NG 就推不到了。
-    #   注意：用 _belt3_left 换算成"从现在起还能等多久"，
-    #   而不是用绝对时刻比较 —— 这样和 start 的语义一致，也不会因为
-    #   _belt3_left 为负数（已经超时）而把窗口算成负的。
-    _belt3_deadline = start + max(_belt3_left, 0.5)
+    # ★★ 皮带3 的运行上限（2026-09-28 修正）★★
+    #   用【从皮带启动时刻算的绝对时刻】：皮带3 在 _belt3_t0 开的，
+    #   所以它最多转到 _belt3_t0 + BELT3_RUN_TIME。
+    #   ⚠ 之前写的是 start + max(_belt3_left, 0.5)：
+    #       _belt3_left 已经是负数（步骤4 结束时皮带就超过上限了），
+    #       max(负数, 0.5) = 0.5 -> 皮带在步骤5 开始后 0.5 秒就停了，
+    #       而那时料还没走到视觉位 —— 直接导致"皮带根本没停、料冲过去"。
+    _belt3_deadline = _belt3_t0 + BELT3_RUN_TIME
     _belt3_stopped = False
-    while time.time() - start < VISION_WAIT_TIMEOUT:
+    if ARM_MOVE_DEBUG:
+        print(f"      [belt3] 步骤5 开始时皮带已转 {start - _belt3_t0:.2f}s，"
+              f"上限 {BELT3_RUN_TIME}s（还剩 {_belt3_deadline - start:.2f}s）")
+    # ★★ 循环退出条件（2026-09-28 修正）★★
+    #   只有两种情况才退出：
+    #     ① 读到 True（不良）—— 有结论了
+    #     ② 等满 VISION_WAIT_TIMEOUT —— 时间到，按已有信息判定
+    #   ★ 皮带停了也【不退出】：料被拦停后可能还要一会儿才滑到视觉位，
+    #     这段等待必须继续看着，否则会把"料还没到"误判成"绿料/良品"。
+    _loop_t = 0.0
+    while (not saw_ng) and (time.time() - start < VISION_WAIT_TIMEOUT):
         val = bool(modbus_client.read_input(VISION_1_INPUT))
         if val != last_val:
-            _val_changes += 1 if last_val is not None else 0
+            # ★ 只有"从有到无/从无到有"才算一次变化。
+            #   第一次读到不算（机器刚上电时本来就有个初值）。
+            if last_val is not None:
+                _val_changes += 1
             _c = "蓝=不良" if val else "绿=良品"
             _arm_trace(f"[视觉] VISION_1 -> {val}  ({_c})"
                        f"  (皮带3 已转 {time.time() - _belt3_t0:.1f}s)")
@@ -980,33 +995,33 @@ def produce_one(modbus_client):
             print(f"★ 视觉读到 True（蓝色 = 不良）→ 停皮带3"
                   f"（皮带3 共转 {_t_see - _belt3_t0:.2f}s，"
                   f"从读见到停皮带指令 {(_t_cmd - _t_see) * 1000:.0f}ms）")
-            break
+            # ★ 这里【不 break】，靠 while 的条件 (not saw_ng) 自然退出。
+            #   为什么：break 会立刻跳出，而"料到视觉位"和"皮带到停止点"
+            #   可能正好挤在同一次循环里。不 break 的话，下一轮条件判断
+            #   会再读一次（虽然不执行循环体，但已经拿到结论了），
+            #   避免边界情况漏判。
         else:
-            # ---- 读到 False = 绿色 = 良品 ----
-            #   ⚠ 但 False 也可能是"根本没有料"，所以这里只记录，不急着下结论
-            saw_ok = True
-        # ★ 皮带3 转够时间了就停，别再等（料要停在推杆够得着的位置）
-        if time.time() > _belt3_deadline:
+            # ---- 读到 False ----
+            #   ⚠ False 可能是"绿料经过"，也可能是"根本没有料"。
+            #      所以这里【只记录】，不急着下结论 —— 真正的良品判定在循环外面，
+            #      而且要配合"电平变化过"才算数。
             if not _belt3_stopped:
-                _t_cmd = time.time()
-                modbus_client.write_coil(BELT_3_COIL, False)
-                _belt3_stopped = True
-                print(f"  [belt3] 到运行上限 {BELT3_RUN_TIME}s（实测 "
-                      f"{_t_cmd - _belt3_t0:.2f}s），先停皮带3 等视觉结果")
-            # ★ 停了之后再多看一会儿 —— 料可能刚被拦停在视觉位附近
-            _wait = VISION_STOP_SETTLE
-            while time.time() - start < VISION_WAIT_TIMEOUT and _wait > 0:
-                val2 = bool(modbus_client.read_input(VISION_1_INPUT))
-                if val2 != last_val:
-                    _val_changes += 1
-                    last_val = val2
-                if val2:
-                    saw_ng = True
-                    print("  停皮带后又读到 True（蓝=不良）→ 按不良处理")
-                    break
-                time.sleep(0.05)
-                _wait -= 0.05
-            break
+                saw_ok = True
+        # ★ 皮带3 转够时间了就先停（料要停在推杆够得着的位置）
+        if time.time() > _belt3_deadline and not _belt3_stopped:
+            _t_cmd = time.time()
+            modbus_client.write_coil(BELT_3_COIL, False)
+            _belt3_stopped = True
+            print(f"  [belt3] 到运行上限 {BELT3_RUN_TIME}s（实测 "
+                  f"{_t_cmd - _belt3_t0:.2f}s），先停皮带3，继续等视觉结果")
+            # ★★★ 2026-09-28 修正：停皮带后【不退出循环】，继续看到超时 ★★★
+            #   原来这里只在 VISION_STOP_SETTLE(0.3s) 内再看一眼，然后 break。
+            #   但料被拦停后可能还要一会儿才滑到视觉位 —— 0.3 秒根本不够，
+            #   而这段时间读到的 False 被当成了"绿料"，于是蓝料被判成良品、
+            #   皮带不停、推杆不推，直接进了良品仓。
+            #   现在：这里什么都不做，让 while 继续转 —— 它会一直看到
+            #         "读到 True"（有结论）或者"等满超时"（时间到）。
+            #   ★ 注意：停皮带后读到的 False 不能再计入 saw_ok（上面已经拦住了）
         time.sleep(0.05)
 
     # ★★★ 三分类判定（2026-09-28）★★★
