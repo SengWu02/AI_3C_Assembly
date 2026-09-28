@@ -781,19 +781,20 @@ def produce_one(modbus_client):
     #   改这里：config.TABLE_A_LOAD_WAIT
     time.sleep(TABLE_A_LOAD_WAIT)
 
-    # --- 1.3 只停发料器，【皮带0 + 滚轮再多转一会儿】 ---
-    #  ★★★ 2026-09-28 现场反馈"皮带1 送料不到位"（尤其第二件起）★★★
-    #    原来三个一起停：发料器吐完料就不需要转了，但皮带要把料送到
-    #    转盘A 门口还需要时间。一起停 -> 皮带停太早 -> 料没到门口，滚轮够不着。
+    # --- 1.3 停发料器和滚轮，皮带0 再多转一会儿 ---
+    #  ★★★ 2026-09-28 现场反馈（两次，方向相反，记录下来避免来回改）★★★
+    #    第1次："皮带1 有时送料不到位" -> 让皮带0 多转（对）
+    #    第2次："转盘滚轮时间太长，走的很不顺" -> 滚轮不能跟着延长（错）
     #
-    #  ★ 为什么滚轮也要跟着延长：
-    #      料"被皮带送到门口"之后，是【靠滚轮把它拉进转盘中心】的。
-    #      如果滚轮跟皮带一起停，料到了门口也没人拉它进来。
-    #      所以让"皮带 + 滚轮"一起多转，只有发料器提前停。
-    modbus_client.write_coil(EMITTER_COIL, False)          # 先停发料器
-    time.sleep(BELT0_EXTRA_TIME)                           # ★ 皮带0 + 滚轮继续转
+    #  ★ 为什么滚轮【不能】转太久：
+    #      滚轮的作用是"把料从门口拉进转盘中心"。拉到中心之后就该停，
+    #      再转就是把料往中心之外推 —— 料会被推偏、或者顶在盘边，
+    #      下一步转盘一转就蹭，表现为"走得不顺"。
+    #      所以：滚轮按原时间（TABLE_A_LOAD_WAIT）停，只有皮带0 多转。
+    modbus_client.write_coil(TABLE_A_ROLL_P_COIL, False)   # 停滚轮（按原时间）
+    modbus_client.write_coil(EMITTER_COIL, False)          # 停发料器
+    time.sleep(BELT0_EXTRA_TIME)                           # ★ 只有皮带0 继续转
     modbus_client.write_coil(BELT_0_COIL, False)           # 停皮带0
-    modbus_client.write_coil(TABLE_A_ROLL_P_COIL, False)   # 停滚轮
     # ★ 料刚进中心还有惯性，要停稳再转盘，否则转的时候料会偏、蹭到盘边
     time.sleep(TABLE_A_REST)
 
@@ -969,10 +970,16 @@ def produce_one(modbus_client):
         if val:
             # ---- 读到 True = 蓝色 = 不良 ----
             saw_ng = True
+            # ★ 精确计时：量出"读到 NG"到"停皮带指令发出"中间花了多久。
+            #   现场反馈"检测到不良皮带3 不能立即停止"，光看代码看不出慢在哪，
+            #   所以把这一段时间打出来（毫秒级）。
+            _t_see = time.time()
             modbus_client.write_coil(BELT_3_COIL, False)   # 立刻停皮带，等推杆
+            _t_cmd = time.time()
             _belt3_stopped = True
-            print(f"★ 视觉读到 True（蓝色 = 不良）→ 停皮带3，推杆推出"
-                  f"（皮带3 共转 {time.time() - _belt3_t0:.1f}s）")
+            print(f"★ 视觉读到 True（蓝色 = 不良）→ 停皮带3"
+                  f"（皮带3 共转 {_t_see - _belt3_t0:.2f}s，"
+                  f"从读见到停皮带指令 {(_t_cmd - _t_see) * 1000:.0f}ms）")
             break
         else:
             # ---- 读到 False = 绿色 = 良品 ----
@@ -981,9 +988,11 @@ def produce_one(modbus_client):
         # ★ 皮带3 转够时间了就停，别再等（料要停在推杆够得着的位置）
         if time.time() > _belt3_deadline:
             if not _belt3_stopped:
+                _t_cmd = time.time()
                 modbus_client.write_coil(BELT_3_COIL, False)
                 _belt3_stopped = True
-                print(f"  [belt3] 到运行上限 {BELT3_RUN_TIME}s，先停皮带3 等视觉结果")
+                print(f"  [belt3] 到运行上限 {BELT3_RUN_TIME}s（实测 "
+                      f"{_t_cmd - _belt3_t0:.2f}s），先停皮带3 等视觉结果")
             # ★ 停了之后再多看一会儿 —— 料可能刚被拦停在视觉位附近
             _wait = VISION_STOP_SETTLE
             while time.time() - start < VISION_WAIT_TIMEOUT and _wait > 0:
